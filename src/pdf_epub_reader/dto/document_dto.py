@@ -88,9 +88,12 @@ class DocumentInfo:
     Presenter は Model の内部実装を知らずに UI 更新に必要な情報だけを扱える。
     `title` は PDF/EPUB に埋め込まれていない可能性があるため optional とする。
     `toc` は目次情報。目次を持たない文書では空リストとなる。
+    `page_sizes` は各ページの PDF ポイント単位 (72dpi 基準) のサイズリスト。
+    Presenter が DPI 換算してページごとに正確なプレースホルダーを生成するために使う。
     """
 
     file_path: str
     total_pages: int
     title: str | None = None
     toc: list[ToCEntry] = field(default_factory=list)
+    page_sizes: list[tuple[float, float]] = field(default_factory=list)

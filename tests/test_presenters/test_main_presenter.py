@@ -54,14 +54,14 @@ class TestOpenFileFlow:
         """文書を開くとプレースホルダー配置とタイトル更新が行われることを確認する。"""
         await main_presenter.open_file("/fake/doc.pdf")
 
-        # まず Model 側に open と render_page (サイズ取得用) が委譲されていること。
+        # Model 側に open が委譲されていること。
         assert len(mock_document_model.get_calls("open_document")) == 1
         assert mock_document_model.get_calls("open_document")[0] == (
             "/fake/doc.pdf",
             None,
         )
-        # render_page_range ではなく render_page (1 回だけ) が呼ばれること。
-        assert len(mock_document_model.get_calls("render_page")) == 1
+        # ページサイズは DocumentInfo.page_sizes から取得するため、
+        # render_page はプレースホルダー配置時には呼ばれない。
         assert len(mock_document_model.get_calls("render_page_range")) == 0
 
         # 次に、その結果が View に反映されていることを確認する。
@@ -152,8 +152,9 @@ class TestZoomFlow:
         assert len(zoom_calls) == 1
         assert zoom_calls[0] == (2.0,)
 
-        # render_page_range ではなく render_page (サイズ取得 1 回) が呼ばれること。
-        assert len(mock_document_model.get_calls("render_page")) == 1
+        # ページサイズは DocumentInfo.page_sizes から DPI 換算するため、
+        # render_page はプレースホルダー配置時には呼ばれない。
+        assert len(mock_document_model.get_calls("render_page")) == 0
         assert len(mock_document_model.get_calls("render_page_range")) == 0
 
         # display_pages にプレースホルダー（空 image_data）が渡されること。

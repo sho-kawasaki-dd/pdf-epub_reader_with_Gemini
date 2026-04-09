@@ -313,11 +313,19 @@ class DocumentModel:
                 )
             )
 
+        # 各ページの PDF ポイントサイズを収集する。レンダリング不要で即座に取得でき、
+        # Presenter が DPI 換算してページごとに正確なプレースホルダーを生成できる。
+        page_sizes: list[tuple[float, float]] = []
+        for i in range(doc.page_count):
+            page = doc[i]
+            page_sizes.append((page.rect.width, page.rect.height))
+
         self._document_info = DocumentInfo(
             file_path=file_path,
             total_pages=doc.page_count,
             title=title,
             toc=toc_entries,
+            page_sizes=page_sizes,
         )
         return self._document_info
 

@@ -53,6 +53,7 @@ class MockDocumentModel:
             file_path=file_path,
             total_pages=3,
             title="Mock Document",
+            page_sizes=[(612.0, 792.0)] * 3,
         )
         return self._document_info
 

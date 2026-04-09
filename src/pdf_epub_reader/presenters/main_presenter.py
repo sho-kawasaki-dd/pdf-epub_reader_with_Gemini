@@ -97,17 +97,17 @@ class MainPresenter:
 
         self._view.set_window_title(doc_info.title or doc_info.file_path)
 
-        # 1 ページ目のサイズを取得し、全ページ同サイズとしてプレースホルダーを配置。
+        # 各ページの PDF ポイントサイズを DPI 換算してプレースホルダーを配置する。
         # 実際の画像は View がビューポートに基づいて後から要求する。
-        sample = await self._document_model.render_page(0, self._current_dpi)
+        scale = self._current_dpi / 72.0
         placeholders = [
             PageData(
                 page_number=i,
                 image_data=b"",
-                width=sample.width,
-                height=sample.height,
+                width=int(pw * scale),
+                height=int(ph * scale),
             )
-            for i in range(doc_info.total_pages)
+            for i, (pw, ph) in enumerate(doc_info.page_sizes)
         ]
         self._view.display_pages(placeholders)
         self._view.show_status_message(
@@ -175,16 +175,16 @@ class MainPresenter:
         effective_dpi = int(DEFAULT_DPI * level)
         self._current_dpi = effective_dpi
 
-        # ズーム変更後もプレースホルダーを再配置し、View に遅延読み込みを任せる。
-        sample = await self._document_model.render_page(0, effective_dpi)
+        # ズーム変更後も各ページの実サイズでプレースホルダーを再配置し、View に遅延読み込みを任せる。
+        scale = effective_dpi / 72.0
         placeholders = [
             PageData(
                 page_number=i,
                 image_data=b"",
-                width=sample.width,
-                height=sample.height,
+                width=int(pw * scale),
+                height=int(ph * scale),
             )
-            for i in range(doc_info.total_pages)
+            for i, (pw, ph) in enumerate(doc_info.page_sizes)
         ]
         self._view.display_pages(placeholders)
 

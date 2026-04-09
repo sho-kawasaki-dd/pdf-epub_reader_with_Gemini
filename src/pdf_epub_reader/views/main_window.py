@@ -18,8 +18,10 @@ from PySide6.QtGui import (
     QColor,
     QDragEnterEvent,
     QDropEvent,
+    QKeySequence,
     QPen,
     QPixmap,
+    QShortcut,
 )
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -32,6 +34,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QRubberBand,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -80,6 +83,8 @@ class MainWindow(QMainWindow):
         self._doc_view = _DocumentGraphicsView()
         # ページ番号連携用
         self._doc_view._on_visible_page_changed = self._on_visible_page_changed
+        # 左ペインへのファイルドロップを MainWindow の共通ハンドラに接続する。
+        self._doc_view._on_file_dropped = self._handle_file_drop
 
         # ドキュメントペインにページ/ズームのオーバーレイを重ねるコンテナ
         doc_pane = QWidget()
@@ -121,6 +126,13 @@ class MainWindow(QMainWindow):
 
         # --- ドラッグ&ドロップ ---
         self.setAcceptDrops(True)
+
+        # --- キーバインド ---
+        # Ctrl+H: 現在表示中のページの高さをビューポートにフィットするズーム。
+        fit_height_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        fit_height_shortcut.activated.connect(
+            self._doc_view.fit_to_page_height
+        )
 
     # =========================================================================
     # メニューバー構築
@@ -193,6 +205,11 @@ class MainWindow(QMainWindow):
         self._zoom_spinbox.blockSignals(True)
         self._zoom_spinbox.setValue(int(level * 100))
         self._zoom_spinbox.blockSignals(False)
+        # _DocumentGraphicsView の内部状態を同期する。
+        # Presenter がズーム変更後にこのメソッドを呼ぶが、_doc_view 側の
+        # _current_dpi / _zoom_level が更新されないと座標変換がずれる。
+        self._doc_view._current_dpi = int(DEFAULT_DPI * level)
+        self._doc_view._zoom_level = level
 
     def show_selection_highlight(
         self, page_number: int, rect: RectCoords
@@ -307,10 +324,14 @@ class MainWindow(QMainWindow):
         for url in event.mimeData().urls():
             path = url.toLocalFile()
             if path.lower().endswith((".pdf", ".epub")):
-                self._add_to_recent(path)
-                if self._on_file_dropped:
-                    self._on_file_dropped(path)
+                self._handle_file_drop(path)
                 break
+
+    def _handle_file_drop(self, path: str) -> None:
+        """ファイルドロップの共通処理。MainWindow.dropEvent と _DocumentGraphicsView の両方から呼ばれる。"""
+        self._add_to_recent(path)
+        if self._on_file_dropped:
+            self._on_file_dropped(path)
 
     # =========================================================================
     # 最近開いたファイル管理
@@ -480,14 +501,21 @@ class _DocumentGraphicsView(QGraphicsView):
         self._on_visible_page_changed: (
             Callable[[int], None] | None
         ) = None
+        self._on_file_dropped: Callable[[str], None] | None = None
 
         # --- DPI・ズーム ---
         self._current_dpi: int = DEFAULT_DPI
         self._zoom_level: float = 1.0
 
         # --- ラバーバンド選択用 ---
+        self._rubber_band = QRubberBand(
+            QRubberBand.Shape.Rectangle, self.viewport()
+        )
         self._rubber_band_active = False
         self._drag_start = None
+
+        # --- ドラッグ&ドロップ（左ペイン対応） ---
+        self.setAcceptDrops(True)
 
     # =====================================================================
     # プレースホルダー配置
@@ -651,6 +679,41 @@ class _DocumentGraphicsView(QGraphicsView):
         self._rendered_pages -= to_release
 
     # =====================================================================
+    # ドラッグ&ドロップ（左ペインでのファイルオープン対応）
+    # =====================================================================
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        """MIME が uri-list かつ PDF/EPUB なら受け入れる。"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path.lower().endswith((".pdf", ".epub")):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        """ドラッグ中も継続的に受け入れる。
+
+        QGraphicsView のデフォルト dragMoveEvent はシーン内アイテムへの
+        転送を試み、受理されなければ ignore() してしまう。
+        これにより dropEvent が発火しなくなるため、明示的に accept する。
+        """
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        """ドロップされたファイルパスを MainWindow 経由でコールバックに渡す。"""
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith((".pdf", ".epub")):
+                if self._on_file_dropped:
+                    self._on_file_dropped(path)
+                break
+
+    # =====================================================================
     # 矩形選択 (Rubber Band)
     # =====================================================================
 
@@ -659,10 +722,21 @@ class _DocumentGraphicsView(QGraphicsView):
         if event.button() == Qt.MouseButton.LeftButton:
             self._rubber_band_active = True
             self._drag_start = event.position().toPoint()
+            self._rubber_band.setGeometry(
+                self._drag_start.x(), self._drag_start.y(), 0, 0
+            )
+            self._rubber_band.show()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        """ドラッグ中の処理（将来的に QRubberBand を表示する等）。"""
+        """ドラッグ中に QRubberBand をカーソルに追従させる。"""
+        if self._rubber_band_active and self._drag_start is not None:
+            from PySide6.QtCore import QRect
+
+            current = event.position().toPoint()
+            self._rubber_band.setGeometry(
+                QRect(self._drag_start, current).normalized()
+            )
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
@@ -672,6 +746,7 @@ class _DocumentGraphicsView(QGraphicsView):
             and self._rubber_band_active
             and self._drag_start is not None
         ):
+            self._rubber_band.hide()
             self._rubber_band_active = False
             drag_end = event.position().toPoint()
 
@@ -788,3 +863,40 @@ class _DocumentGraphicsView(QGraphicsView):
         """指定ページが見えるようにスクロールする。"""
         if 0 <= page_number < len(self._page_rects):
             self.ensureVisible(self._page_rects[page_number], 0, 50)
+
+    # =====================================================================
+    # 縦フィット (Ctrl+H)
+    # =====================================================================
+
+    def fit_to_page_height(self) -> None:
+        """現在表示中のページの高さがビューポートに収まるようズームを調整する。
+
+        ビューポートの高さと現在のページのピクセル高さから
+        必要なズーム率を算出し、_on_zoom_changed を発火する。
+        Presenter が再レンダリングフローを実行する。
+        """
+        if not self._page_sizes:
+            return
+
+        # 現在最も上に見えているページを特定する。
+        viewport_rect = self.mapToScene(self.viewport().rect()).boundingRect()
+        top_page = 0
+        for i, page_rect in enumerate(self._page_rects):
+            if page_rect.intersects(viewport_rect):
+                top_page = i
+                break
+
+        # 現在のズーム率でのページ高さから zoom=1.0 時のページ高さを逆算し、
+        # ビューポートに収まるズーム率を求める。
+        _, page_height = self._page_sizes[top_page]
+        base_height = page_height / self._zoom_level  # zoom=1.0 換算
+        viewport_height = self.viewport().height()
+        new_zoom = viewport_height / base_height
+
+        # ZOOM_MIN 〜 ZOOM_MAX でクランプする。
+        new_zoom = max(ZOOM_MIN, min(new_zoom, ZOOM_MAX))
+
+        if new_zoom != self._zoom_level:
+            self._zoom_level = new_zoom
+            if self._on_zoom_changed:
+                self._on_zoom_changed(new_zoom)
