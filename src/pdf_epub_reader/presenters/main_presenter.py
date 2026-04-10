@@ -105,6 +105,10 @@ class MainPresenter:
         self._panel_presenter.set_on_cache_invalidate_handler(
             self._on_cache_invalidate
         )
+        # Phase 7.5: 期限切れ自動リフレッシュ
+        self._panel_presenter.set_on_cache_expired_handler(
+            self._on_cache_expired
+        )
 
         # Phase 7 Bugfix: 起動時バックグラウンドモデル検証
         if self._ai_model is not None:
@@ -383,6 +387,11 @@ class MainPresenter:
         self._panel_presenter._view.set_cache_button_enabled(False)
         self._view.show_status_message("キャッシュを作成中...")
         try:
+            # Phase 7.5: 既存キャッシュがあれば先に削除する（重複作成防止）
+            existing = await self._ai_model.get_cache_status()
+            if existing.is_active:
+                await self._ai_model.invalidate_cache()
+
             full_text = await self._document_model.extract_all_text()
             display_name = f"pdf-reader: {doc_info.file_path.split('/')[-1].split(chr(92))[-1]}"
             status = await self._ai_model.create_cache(
@@ -403,6 +412,21 @@ class MainPresenter:
     def _on_cache_invalidate(self) -> None:
         """キャッシュ削除ボタンからの非同期操作を開始する。"""
         asyncio.ensure_future(self._do_cache_invalidate())
+
+    def _on_cache_expired(self) -> None:
+        """View のカウントダウン 0 到達から非同期リフレッシュを開始する。"""
+        asyncio.ensure_future(self._do_cache_expired())
+
+    async def _do_cache_expired(self) -> None:
+        """キャッシュ期限切れ時に最新状態を取得して UI を更新する。"""
+        if self._ai_model is None:
+            return
+        try:
+            status = await self._ai_model.get_cache_status()
+            self._panel_presenter.update_cache_status(status)
+        except Exception:
+            logger.debug("Cache expired status refresh failed", exc_info=True)
+        self._view.show_status_message("キャッシュの有効期限が切れました")
 
     async def _do_cache_invalidate(self) -> None:
         """キャッシュを無効化する。"""

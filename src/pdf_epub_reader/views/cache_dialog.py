@@ -8,7 +8,9 @@ ICacheDialogView Protocol を満たすモーダル QDialog。
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from datetime import datetime, timezone
+
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
@@ -38,6 +40,12 @@ class CacheDialog(QDialog):
         self.setMinimumHeight(360)
 
         self._action: str | None = None
+
+        # Phase 7.5: カウントダウン状態
+        self._expire_time_utc: datetime | None = None
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.setInterval(1000)
+        self._countdown_timer.timeout.connect(self._on_countdown_tick)
 
         layout = QVBoxLayout(self)
         self._tabs = QTabWidget()
@@ -197,7 +205,49 @@ class CacheDialog(QDialog):
         name_item = self._table.item(row, 0)
         return name_item.text() if name_item else None
 
+    # --- Phase 7.5: カウントダウン ---
+
+    def start_countdown(self, expire_time: str) -> None:
+        """タブ1 の残り TTL を 1 秒間隔で H:MM:SS 更新する。"""
+        et = expire_time.replace("Z", "+00:00")
+        self._expire_time_utc = datetime.fromisoformat(et).astimezone(
+            timezone.utc
+        )
+        self._on_countdown_tick()
+        self._countdown_timer.start()
+
+    def stop_countdown(self) -> None:
+        """カウントダウンを停止する。"""
+        self._countdown_timer.stop()
+        self._expire_time_utc = None
+
+    def _on_countdown_tick(self) -> None:
+        """1 秒ごとに _ttl_label を更新する。"""
+        if self._expire_time_utc is None:
+            return
+        now = datetime.now(timezone.utc)
+        remaining = (self._expire_time_utc - now).total_seconds()
+        if remaining <= 0:
+            self._countdown_timer.stop()
+            self._ttl_label.setText("期限切れ")
+            self._expire_time_utc = None
+            return
+        total_sec = int(remaining)
+        h, rem = divmod(total_sec, 3600)
+        m, s = divmod(rem, 60)
+        self._ttl_label.setText(f"{h}:{m:02d}:{s:02d}")
+
     # --- Lifecycle ---
+
+    def accept(self) -> None:
+        """ダイアログを承認終了する前にタイマーを停止する。"""
+        self.stop_countdown()
+        super().accept()
+
+    def reject(self) -> None:
+        """ダイアログをキャンセル終了する前にタイマーを停止する。"""
+        self.stop_countdown()
+        super().reject()
 
     def show(self) -> str | None:  # type: ignore[override]
         """モーダル表示しユーザーアクションを返す。"""

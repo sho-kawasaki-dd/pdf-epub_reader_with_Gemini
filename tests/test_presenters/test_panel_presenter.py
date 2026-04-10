@@ -714,3 +714,57 @@ class TestModelUnsetGuard:
         await panel_presenter._do_translate(include_explanation=False)
 
         assert len(mock_ai_model.get_calls("analyze")) == 1
+
+
+class TestCacheCountdown:
+    """Phase 7.5: カウントダウン連携を検証する。"""
+
+    def test_update_cache_status_starts_countdown(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """active + expire_time → start_cache_countdown が呼ばれること。"""
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        status = CacheStatus(
+            is_active=True,
+            token_count=5000,
+            cache_name="c1",
+            expire_time="2026-12-31T23:59:59Z",
+        )
+        presenter.update_cache_status(status)
+
+        cd_calls = mock_side_panel_view.get_calls("start_cache_countdown")
+        assert len(cd_calls) == 1
+        assert cd_calls[0] == ("2026-12-31T23:59:59Z",)
+
+    def test_update_cache_status_stops_countdown_when_inactive(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """inactive → stop_cache_countdown が呼ばれること。"""
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.update_cache_status(CacheStatus())
+
+        stop_calls = mock_side_panel_view.get_calls("stop_cache_countdown")
+        assert len(stop_calls) == 1
+
+    def test_cache_expired_fires_handler(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """simulate_cache_expired → 登録ハンドラが発火すること。"""
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        fired = []
+        presenter.set_on_cache_expired_handler(lambda: fired.append(True))
+        mock_side_panel_view.simulate_cache_expired()
+
+        assert fired == [True]

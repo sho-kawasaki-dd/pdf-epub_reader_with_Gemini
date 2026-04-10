@@ -125,3 +125,24 @@ class TestShowReturnsAction:
         action, _, _ = presenter.show()
 
         assert action is None
+
+
+class TestCacheCountdown:
+    """Phase 7.5: active キャッシュでカウントダウンが開始されることを検証する。"""
+
+    def test_active_cache_starts_countdown(self) -> None:
+        """active + expire_time → start_countdown が呼ばれること。"""
+        mock_view = MockCacheDialogView()
+        status = CacheStatus(
+            is_active=True,
+            cache_name="cache-abc",
+            expire_time="2026-12-31T23:59:59Z",
+        )
+        presenter = CachePresenter(
+            mock_view, status, [], AppConfig()
+        )
+        presenter.show()
+
+        cd_calls = mock_view.get_calls("start_countdown")
+        assert len(cd_calls) == 1
+        assert cd_calls[0] == ("2026-12-31T23:59:59Z",)

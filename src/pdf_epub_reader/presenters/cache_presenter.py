@@ -41,6 +41,10 @@ class CachePresenter:
         # タブ2: キャッシュ一覧
         self._view.set_cache_list(self._cache_list)
 
+        # Phase 7.5: active + expire_time ならカウントダウン開始
+        if self._cache_status.is_active and self._cache_status.expire_time:
+            self._view.start_countdown(self._cache_status.expire_time)
+
         # ダイアログ表示 → アクション文字列を受け取る
         action = self._view.show()
         new_ttl = self._view.get_new_ttl_minutes()

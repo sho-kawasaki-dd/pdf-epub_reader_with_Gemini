@@ -16,13 +16,21 @@ from PySide6.QtWidgets import QApplication
 import qasync
 
 
-def run_app(app_main: Callable[[], Awaitable[None]]) -> None:
+def run_app(
+    app_main: Callable[[], Awaitable[None]],
+    *,
+    on_shutdown: Callable[[], Awaitable[None]] | None = None,
+) -> None:
     """QApplication と asyncio イベントループを統合してアプリを起動する。
 
     Parameters
     ----------
     app_main:
         非同期コンテキスト内で MVP コンポーネントを組み立てるコルーチン関数。
+    on_shutdown:
+        アプリ終了時に呼ばれる非同期コールバック。
+        キャッシュの自動破棄など、終了前のクリーンアップに使用する。
+        例外が発生しても他のクリーンアップ処理を妨げない。
 
     この関数は以下の手順で動作する:
     1. QApplication を生成（既存インスタンスがあれば再利用）
@@ -44,5 +52,10 @@ def run_app(app_main: Callable[[], Awaitable[None]]) -> None:
     try:
         loop.run_forever()
     finally:
+        if on_shutdown is not None:
+            try:
+                loop.run_until_complete(on_shutdown())
+            except Exception:  # noqa: BLE001
+                pass  # シャットダウンエラーでもクリーンアップを続行する
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()

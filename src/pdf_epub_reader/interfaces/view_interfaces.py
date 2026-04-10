@@ -245,6 +245,29 @@ class ISidePanelView(Protocol):
         """
         ...
 
+    # --- Phase 7.5: キャッシュカウントダウン ---
+
+    def start_cache_countdown(self, expire_time: str) -> None:
+        """キャッシュ残り時間のカウントダウンを開始する。
+
+        Args:
+            expire_time: ISO 8601 形式の有効期限文字列。
+                         View は 1 秒間隔で残り時間を H:MM:SS で更新する。
+        """
+        ...
+
+    def stop_cache_countdown(self) -> None:
+        """カウントダウンを停止し、タイマーを解放する。"""
+        ...
+
+    def set_on_cache_expired(self, cb: Callable[[], None]) -> None:
+        """カウントダウンが 0 に到達したときのコールバックを登録する。
+
+        View のタイマーが残り 0 以下を検出したときに発火される。
+        Presenter はこのコールバックで get_cache_status を再取得し UI を更新する。
+        """
+        ...
+
 
 @runtime_checkable
 class ICacheDialogView(Protocol):
@@ -274,6 +297,21 @@ class ICacheDialogView(Protocol):
 
     def get_selected_cache_name(self) -> str | None:
         """テーブルで選択されているキャッシュの name を返す。"""
+        ...
+
+    # --- Phase 7.5: カウントダウン ---
+
+    def start_countdown(self, expire_time: str) -> None:
+        """タブ1 の残り TTL をリアルタイム更新するカウントダウンを開始する。
+
+        Args:
+            expire_time: ISO 8601 形式の有効期限文字列。
+                         1 秒間隔で H:MM:SS 形式で _ttl_label を更新する。
+        """
+        ...
+
+    def stop_countdown(self) -> None:
+        """カウントダウンを停止する。"""
         ...
 
     # --- Lifecycle ---

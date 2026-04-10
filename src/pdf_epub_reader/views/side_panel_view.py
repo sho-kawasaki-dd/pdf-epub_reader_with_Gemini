@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import importlib.resources
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 import markdown
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QPixmap
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -218,6 +219,14 @@ class SidePanelView(QWidget):
         self._on_cache_invalidate_requested: Callable[[], None] | None = None
         self._cache_is_active: bool = False
 
+        # Phase 7.5: カウントダウン状態
+        self._on_cache_expired: Callable[[], None] | None = None
+        self._cache_base_text: str = ""
+        self._expire_time_utc: datetime | None = None
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.setInterval(1000)
+        self._countdown_timer.timeout.connect(self._on_countdown_tick)
+
         # --- ウィジェット構築 ---
         layout = QVBoxLayout(self)
 
@@ -384,7 +393,12 @@ class SidePanelView(QWidget):
             btn.setEnabled(not loading)
 
     def update_cache_status_brief(self, text: str) -> None:
-        """キャッシュステータスラベルのテキストを差し替える。"""
+        """キャッシュステータスラベルのテキストを差し替える。
+
+        カウントダウン中は _on_countdown_tick が残り時間を追記するため、
+        ここではベーステキストを保持して即時反映する。
+        """
+        self._cache_base_text = text
         self._cache_label.setText(text)
 
     def set_active_tab(self, mode: str) -> None:
@@ -491,6 +505,55 @@ class SidePanelView(QWidget):
             QMessageBox.StandardButton.Cancel,
         )
         return result == QMessageBox.StandardButton.Ok
+
+    # --- Phase 7.5: キャッシュカウントダウン ---
+
+    def start_cache_countdown(self, expire_time: str) -> None:
+        """ISO 形式の expire_time からカウントダウンを開始する。
+
+        1 秒間隔の QTimer で残り時間を H:MM:SS 形式で
+        _cache_label に追記していく。
+        """
+        # ISO 8601 パース（末尾 Z を UTC として扱う）
+        et = expire_time.replace("Z", "+00:00")
+        self._expire_time_utc = datetime.fromisoformat(et).astimezone(
+            timezone.utc
+        )
+        # 開始時に即座に 1 回表示を更新してからタイマーを開始する
+        self._on_countdown_tick()
+        self._countdown_timer.start()
+
+    def stop_cache_countdown(self) -> None:
+        """カウントダウンを停止する。"""
+        self._countdown_timer.stop()
+        self._expire_time_utc = None
+
+    def set_on_cache_expired(self, cb: Callable[[], None]) -> None:
+        """カウントダウン 0 到達時のコールバックを登録する。"""
+        self._on_cache_expired = cb
+
+    def _on_countdown_tick(self) -> None:
+        """1 秒ごとに残り時間を計算しラベルを更新する。"""
+        if self._expire_time_utc is None:
+            return
+        now = datetime.now(timezone.utc)
+        remaining = (self._expire_time_utc - now).total_seconds()
+        if remaining <= 0:
+            self._countdown_timer.stop()
+            self._cache_label.setText(
+                self._cache_base_text + " — 期限切れ"
+            )
+            self._expire_time_utc = None
+            if self._on_cache_expired:
+                self._on_cache_expired()
+            return
+        # H:MM:SS 形式
+        total_sec = int(remaining)
+        h, rem = divmod(total_sec, 3600)
+        m, s = divmod(rem, 60)
+        self._cache_label.setText(
+            f"{self._cache_base_text} — 残り {h}:{m:02d}:{s:02d}"
+        )
 
     # --- Internal event handlers ---
 

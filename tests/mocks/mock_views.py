@@ -179,6 +179,7 @@ class MockSidePanelView:
         self._on_cache_invalidate_requested: Callable[[], None] | None = None
         self._cache_is_active: bool = False
         self._confirm_dialog_return: bool = True
+        self._on_cache_expired: Callable[[], None] | None = None
 
     # --- Display commands ---
 
@@ -257,6 +258,17 @@ class MockSidePanelView:
         self.calls.append(("show_confirm_dialog", (title, message)))
         return self._confirm_dialog_return
 
+    # --- Phase 7.5: カウントダウン ---
+
+    def start_cache_countdown(self, expire_time: str) -> None:
+        self.calls.append(("start_cache_countdown", (expire_time,)))
+
+    def stop_cache_countdown(self) -> None:
+        self.calls.append(("stop_cache_countdown", ()))
+
+    def set_on_cache_expired(self, cb: Callable[[], None]) -> None:
+        self._on_cache_expired = cb
+
     # --- Simulation helpers ---
 
     def simulate_translate_requested(self, include_explanation: bool) -> None:
@@ -282,6 +294,11 @@ class MockSidePanelView:
     def simulate_cache_invalidate_requested(self) -> None:
         if self._on_cache_invalidate_requested:
             self._on_cache_invalidate_requested()
+
+    def simulate_cache_expired(self) -> None:
+        """View のカウントダウン 0 到達を擬似するヘルパー。"""
+        if self._on_cache_expired:
+            self._on_cache_expired()
 
     # --- Helpers ---
 
@@ -505,6 +522,14 @@ class MockCacheDialogView:
     def show(self) -> str | None:
         self.calls.append(("show", ()))
         return self._show_return
+
+    # --- Phase 7.5: カウントダウン ---
+
+    def start_countdown(self, expire_time: str) -> None:
+        self.calls.append(("start_countdown", (expire_time,)))
+
+    def stop_countdown(self) -> None:
+        self.calls.append(("stop_countdown", ()))
 
     # --- Helpers ---
 

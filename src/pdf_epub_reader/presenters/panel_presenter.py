@@ -48,6 +48,8 @@ class PanelPresenter:
         self._cache_status = CacheStatus()
         self._on_cache_create_handler: Callable[[], None] | None = None
         self._on_cache_invalidate_handler: Callable[[], None] | None = None
+        # Phase 7.5: 期限切れコールバック
+        self._on_cache_expired_handler: Callable[[], None] | None = None
 
         # View は「どの関数を呼ぶか」だけを知ればよい。
         # 実際の処理内容は Presenter 側に閉じ込める。
@@ -59,6 +61,7 @@ class PanelPresenter:
         self._view.set_on_cache_invalidate_requested(
             self._fire_cache_invalidate
         )
+        self._view.set_on_cache_expired(self._on_cache_expired)
 
     # --- Public API (called by MainPresenter) ---
 
@@ -125,7 +128,11 @@ class PanelPresenter:
         self._on_cache_invalidate_handler = cb
 
     def update_cache_status(self, status: CacheStatus) -> None:
-        """キャッシュ状態を内部に保持し、View を更新する。"""
+        """キャッシュ状態を内部に保持し、View を更新する。
+
+        active + expire_time が存在する場合はカウントダウンを開始し、
+        inactive の場合はカウントダウンを停止する。
+        """
         self._cache_status = status
         self._view.set_cache_active(status.is_active)
         if status.is_active:
@@ -133,6 +140,26 @@ class PanelPresenter:
         else:
             brief = "キャッシュ: OFF"
         self._view.update_cache_status_brief(brief)
+
+        # Phase 7.5: カウントダウン連携
+        if status.is_active and status.expire_time:
+            self._view.start_cache_countdown(status.expire_time)
+        else:
+            self._view.stop_cache_countdown()
+
+    def set_on_cache_expired_handler(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """MainPresenter が登録する期限切れハンドラ。"""
+        self._on_cache_expired_handler = cb
+
+    def _on_cache_expired(self) -> None:
+        """View のカウントダウンが 0 に到達したとき呼ばれる。
+
+        MainPresenter に委譲して get_cache_status の再取得を行う。
+        """
+        if self._on_cache_expired_handler:
+            self._on_cache_expired_handler()
 
     # --- Private callback handlers ---
 

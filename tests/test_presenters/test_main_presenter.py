@@ -955,6 +955,97 @@ class TestValidateModelsOnStartup:
         assert any("API キー" in msg[0] for msg in status_msgs)
 
 
+class TestCacheExpiredRefresh:
+    """Phase 7.5: キャッシュ期限切れ自動リフレッシュを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_cache_expired_refreshes_status(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """expired コールバック → get_cache_status + update_cache_status が呼ばれること。"""
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+        )
+        mock_ai_model.calls.clear()
+        mock_side_panel_view.calls.clear()
+
+        await presenter._do_cache_expired()
+
+        assert len(mock_ai_model.get_calls("get_cache_status")) >= 1
+        # inactive が返るので stop_cache_countdown が呼ばれる
+        assert len(mock_side_panel_view.get_calls("stop_cache_countdown")) >= 1
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("有効期限" in msg[0] for msg in status_msgs)
+
+
+class TestCacheCreateInvalidatesExisting:
+    """Phase 7.5: キャッシュ重複作成防止を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_cache_create_invalidates_existing_first(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """active なキャッシュがある状態で create → invalidate が先に呼ばれること。"""
+        mock_ai_model.get_cache_status = lambda: _async_return(
+            CacheStatus(is_active=True, cache_name="old-cache")
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            ai_model=mock_ai_model,
+        )
+        await presenter.open_file("/fake/doc.pdf")
+        mock_ai_model.calls.clear()
+
+        await presenter._do_cache_create()
+
+        # invalidate_cache が create_cache より前に呼ばれることを確認
+        call_names = [name for name, _ in mock_ai_model.calls]
+        inv_idx = call_names.index("invalidate_cache")
+        create_idx = call_names.index("create_cache")
+        assert inv_idx < create_idx
+
+
+class TestShutdownCallsInvalidate:
+    """Phase 7.5: アプリ終了時のキャッシュ自動破棄を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_calls_invalidate(
+        self,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """_shutdown() が invalidate_cache を呼ぶこと。"""
+        import pdf_epub_reader.app as app_module
+
+        original_ref = app_module._ai_model_ref
+        try:
+            app_module._ai_model_ref = mock_ai_model
+            mock_ai_model.calls.clear()
+            await app_module._shutdown()
+
+            assert len(mock_ai_model.get_calls("invalidate_cache")) == 1
+        finally:
+            app_module._ai_model_ref = original_ref
+
+
 # --- Helpers ---
 
 async def _async_return(value):
