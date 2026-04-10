@@ -25,7 +25,7 @@ from pdf_epub_reader.dto import (
     CacheStatus,
     ModelInfo,
 )
-from pdf_epub_reader.utils.config import AppConfig
+from pdf_epub_reader.utils.config import AppConfig, DEFAULT_EXPLANATION_ADDENDUM
 from pdf_epub_reader.utils.exceptions import (
     AIAPIError,
     AIKeyMissingError,
@@ -88,7 +88,9 @@ class AIModel:
         self._ensure_client()
 
         model_name = request.model_name or self._config.gemini_model_name
-        system_instruction = self._build_system_instruction(request.mode)
+        system_instruction = self._build_system_instruction(
+            request.mode, include_explanation=request.include_explanation
+        )
         contents = self._build_contents(request)
 
         config = genai_types.GenerateContentConfig(
@@ -171,16 +173,23 @@ class AIModel:
         if self._client is None:
             raise AIKeyMissingError("API キーが設定されていません")
 
-    def _build_system_instruction(self, mode: AnalysisMode) -> str:
+    def _build_system_instruction(
+        self, mode: AnalysisMode, *, include_explanation: bool = False
+    ) -> str:
         """モードに応じたシステムプロンプトを構築する。
 
         テンプレート内の ``{output_language}`` を実際の出力言語で置換する。
+        翻訳モードかつ ``include_explanation=True`` の場合は、解説要求の
+        追記（``DEFAULT_EXPLANATION_ADDENDUM``）をプロンプト末尾に付与する。
         """
         if mode == AnalysisMode.TRANSLATION:
             template = self._config.system_prompt_translation
         else:
             template = _CUSTOM_PROMPT_SYSTEM_TEMPLATE
-        return template.format(output_language=self._config.output_language)
+        instruction = template.format(output_language=self._config.output_language)
+        if mode == AnalysisMode.TRANSLATION and include_explanation:
+            instruction += DEFAULT_EXPLANATION_ADDENDUM
+        return instruction
 
     @staticmethod
     def _build_contents(
@@ -273,13 +282,24 @@ class AIModel:
         request: AnalysisRequest,
         response: genai_types.GenerateContentResponse,
     ) -> AnalysisResult:
-        """API レスポンスを AnalysisResult に変換する。"""
+        """API レスポンスを AnalysisResult に変換する。
+
+        翻訳モードかつ ``include_explanation=True`` の場合、
+        レスポンス内の ``---`` 区切り線で翻訳と解説を分離する。
+        区切りが見つからない場合は全体を翻訳テキストとして扱う。
+        """
         raw_text = response.text or ""
 
         if request.mode == AnalysisMode.TRANSLATION:
+            translated_text = raw_text
+            explanation = None
+            if request.include_explanation and "---" in raw_text:
+                parts = raw_text.split("---", 1)
+                translated_text = parts[0].strip()
+                explanation = parts[1].strip() if len(parts) > 1 else None
             return AnalysisResult(
-                translated_text=raw_text,
-                explanation=None,
+                translated_text=translated_text,
+                explanation=explanation,
                 raw_response=raw_text,
             )
         # カスタムプロンプトモード

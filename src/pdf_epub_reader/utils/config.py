@@ -62,6 +62,12 @@ DEFAULT_TRANSLATION_PROMPT = (
     "- 回答は Markdown 形式で出力してください。"
 )
 
+# 解説付き翻訳モード時にシステムプロンプトへ追記する指示。
+# AppConfig フィールドには追加せず、設定ダイアログの対象外とする。
+DEFAULT_EXPLANATION_ADDENDUM = (
+    "\n翻訳の後に「---」区切り線を入れ、その下に専門用語・概念・背景知識の解説を付けてください。"
+)
+
 # --- バリデーション定数 (Phase 5: 設定ダイアログ) ---
 DPI_MIN = 72
 DPI_MAX = 600

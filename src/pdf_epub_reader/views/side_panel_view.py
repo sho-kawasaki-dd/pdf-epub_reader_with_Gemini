@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import markdown
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QPixmap
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -139,19 +139,73 @@ def _render_markdown_html(md_text: str) -> str:
 </html>"""
 
 
+class CollapsibleSection(QWidget):
+    """クリックで子要素の表示/非表示を切り替えるセクションウィジェット。
+
+    ヘッダー（▶/▼ プレフィックス付き QPushButton）をクリックすると
+    コンテンツ領域が展開/折りたたみされる。
+    Phase 6.5 で選択プレビュー領域の視認性向上のために導入。
+    """
+
+    def __init__(
+        self, title: str, parent: QWidget | None = None, expanded: bool = True
+    ) -> None:
+        super().__init__(parent)
+        self._title = title
+        self._expanded = expanded
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ヘッダーボタン（フラットスタイル、左寄せ）
+        self._toggle_btn = QPushButton(self._header_text())
+        self._toggle_btn.setFlat(True)
+        self._toggle_btn.setStyleSheet("text-align: left; font-weight: bold;")
+        self._toggle_btn.clicked.connect(self._toggle)
+        layout.addWidget(self._toggle_btn)
+
+        # コンテンツコンテナ
+        self._content = QWidget()
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(0, 0, 0, 0)
+        self._content.setVisible(self._expanded)
+        layout.addWidget(self._content)
+
+    def content_layout(self) -> QVBoxLayout:
+        """子ウィジェットを追加するための内部レイアウトを返す。"""
+        return self._content_layout
+
+    def _header_text(self) -> str:
+        prefix = "▼" if self._expanded else "▶"
+        return f"{prefix} {self._title}"
+
+    def _toggle(self) -> None:
+        self._expanded = not self._expanded
+        self._content.setVisible(self._expanded)
+        self._toggle_btn.setText(self._header_text())
+
+
 class SidePanelView(QWidget):
     """ISidePanelView Protocol を満たすサイドパネル実装。
 
-    上から順に「選択テキスト」「サムネイル」「画像送信チェック」
+    上から順に「選択テキスト（折りたたみ可能）」
     「ローディングバー」「タブ（翻訳 / カスタム）」「キャッシュステータス」
     を縦積みし、ボタンイベントはコールバックで外部に通知する。
 
     Phase 4 で AI 回答欄を QWebEngineView + KaTeX に差し替え、
     Markdown・数式・化学式のレンダリングに対応した。
+    Phase 6.5 で選択プレビュー部分を CollapsibleSection で折りたたみ可能にした。
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+
+        # --- KaTeX ローカルバンドルの baseUrl ---
+        # Chromium が file:/// リソースを読み込めるよう、
+        # setHtml() の第二引数に渡す QUrl を保持する。
+        katex_dir = _get_katex_dir()
+        self._katex_base_url = QUrl.fromLocalFile(str(katex_dir) + "/")
 
         # --- コールバック保持用 ---
         self._on_translate_requested: Callable[[bool], None] | None = None
@@ -171,27 +225,31 @@ class SidePanelView(QWidget):
         model_row.addWidget(self._model_combo, 1)
         layout.addLayout(model_row)
 
-        # 選択テキスト表示
-        layout.addWidget(QLabel("選択テキスト:"))
+        # 選択テキスト（折りたたみ可能セクション）
+        self._selection_section = CollapsibleSection("選択テキスト", expanded=True)
+        sel_layout = self._selection_section.content_layout()
+
         self._selected_text_edit = QTextEdit()
         self._selected_text_edit.setReadOnly(True)
         self._selected_text_edit.setMaximumHeight(120)
         self._selected_text_edit.setPlaceholderText(
             "ドキュメント上でテキストを選択してください"
         )
-        layout.addWidget(self._selected_text_edit)
+        sel_layout.addWidget(self._selected_text_edit)
 
         # Phase 4: サムネイルプレビュー（クロップ画像がある場合のみ表示）
         self._thumbnail_label = QLabel()
         self._thumbnail_label.setMaximumHeight(100)
         self._thumbnail_label.setVisible(False)
-        layout.addWidget(self._thumbnail_label)
+        sel_layout.addWidget(self._thumbnail_label)
 
         # Phase 4:「画像としても送信」チェックボックス
         self._force_image_checkbox = QCheckBox("画像としても送信")
         self._force_image_checkbox.setChecked(False)
         self._force_image_checkbox.toggled.connect(self._fire_force_image_toggled)
-        layout.addWidget(self._force_image_checkbox)
+        sel_layout.addWidget(self._force_image_checkbox)
+
+        layout.addWidget(self._selection_section)
 
         # ローディングバー（通常は非表示）
         self._progress_bar = QProgressBar()
@@ -223,7 +281,8 @@ class SidePanelView(QWidget):
         self._translation_result = QWebEngineView()
         self._translation_result.setHtml(
             "<html><body style='color:#999;font-size:14px;'>"
-            "翻訳結果がここに表示されます</body></html>"
+            "翻訳結果がここに表示されます</body></html>",
+            self._katex_base_url,
         )
         translation_layout.addWidget(self._translation_result)
 
@@ -248,7 +307,8 @@ class SidePanelView(QWidget):
         self._custom_result = QWebEngineView()
         self._custom_result.setHtml(
             "<html><body style='color:#999;font-size:14px;'>"
-            "結果がここに表示されます</body></html>"
+            "結果がここに表示されます</body></html>",
+            self._katex_base_url,
         )
         custom_layout.addWidget(self._custom_result)
 
@@ -302,9 +362,9 @@ class SidePanelView(QWidget):
         html = _render_markdown_html(text)
         current_tab = self._tab_widget.currentIndex()
         if current_tab == 0:
-            self._translation_result.setHtml(html)
+            self._translation_result.setHtml(html, self._katex_base_url)
         else:
-            self._custom_result.setHtml(html)
+            self._custom_result.setHtml(html, self._katex_base_url)
 
     def show_loading(self, loading: bool) -> None:
         """ローディングバーの表示切り替えとボタンの有効/無効を制御する。"""

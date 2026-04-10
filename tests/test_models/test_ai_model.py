@@ -16,7 +16,7 @@ from pdf_epub_reader.models.ai_model import (
     _CUSTOM_PROMPT_SYSTEM_TEMPLATE,
     _MAX_RETRIES,
 )
-from pdf_epub_reader.utils.config import AppConfig, DEFAULT_TRANSLATION_PROMPT
+from pdf_epub_reader.utils.config import AppConfig, DEFAULT_TRANSLATION_PROMPT, DEFAULT_EXPLANATION_ADDENDUM
 from pdf_epub_reader.utils.exceptions import (
     AIAPIError,
     AIKeyMissingError,
@@ -521,3 +521,64 @@ class TestUpdateConfig:
         call_kwargs = model._client.aio.models.generate_content.call_args
         config = call_kwargs.kwargs["config"]
         assert "English" in config.system_instruction
+
+
+class TestExplanationMode:
+    """解説付き翻訳モードのシステム指示とレスポンスパースを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_explanation_mode_adds_addendum_to_system_instruction(
+        self,
+    ) -> None:
+        """include_explanation=True のとき、システム指示に addendum が追記されること。"""
+        model = _build_model()
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=_make_mock_response("翻訳\n---\n解説")
+        )
+
+        request = AnalysisRequest(
+            text="Hello",
+            mode=AnalysisMode.TRANSLATION,
+            include_explanation=True,
+        )
+        await model.analyze(request)
+
+        call_kwargs = model._client.aio.models.generate_content.call_args
+        config = call_kwargs.kwargs["config"]
+        assert DEFAULT_EXPLANATION_ADDENDUM in config.system_instruction
+
+    @pytest.mark.asyncio
+    async def test_parse_response_splits_on_separator(self) -> None:
+        """レスポンスが --- で正しく translated_text と explanation に分割されること。"""
+        model = _build_model()
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=_make_mock_response("翻訳テキスト\n---\n用語解説部分")
+        )
+
+        request = AnalysisRequest(
+            text="Hello",
+            mode=AnalysisMode.TRANSLATION,
+            include_explanation=True,
+        )
+        result = await model.analyze(request)
+
+        assert result.translated_text == "翻訳テキスト"
+        assert result.explanation == "用語解説部分"
+
+    @pytest.mark.asyncio
+    async def test_parse_response_no_separator_graceful(self) -> None:
+        """--- 区切りが無い場合、全体を translated_text とし explanation=None になること。"""
+        model = _build_model()
+        model._client.aio.models.generate_content = AsyncMock(
+            return_value=_make_mock_response("翻訳のみの結果")
+        )
+
+        request = AnalysisRequest(
+            text="Hello",
+            mode=AnalysisMode.TRANSLATION,
+            include_explanation=True,
+        )
+        result = await model.analyze(request)
+
+        assert result.translated_text == "翻訳のみの結果"
+        assert result.explanation is None
