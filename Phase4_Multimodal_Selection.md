@@ -42,7 +42,7 @@ PDF 内の数式は以下の格納形式を取りうる:
 
 ### **AI 回答欄の Markdown レンダリング**
 
-Gemini の応答は Markdown（見出し、箇条書き、コードブロック、LaTeX 数式 `$...$`）で返るため、`QWebEngineView` + KaTeX で描画する。Markdown→HTML 変換は View 層の責務とし、Presenter は生の Markdown 文字列を渡すだけとする。
+Gemini の応答は Markdown（見出し、箇条書き、コードブロック、LaTeX 数式 `$...$`、化学式 `\ce{...}`）で返るため、`QWebEngineView` + KaTeX で描画する。Markdown→HTML 変換は View 層の責務とし、Presenter は生の Markdown 文字列を渡すだけとする。化学式は KaTeX の `mhchem` 拡張をローカル読み込みして描画する。
 
 ---
 
@@ -219,7 +219,8 @@ request = AnalysisRequest(
 2. **選択範囲プレビュー**: 既存の `QTextEdit` (テキスト表示) + `QLabel` (サムネイル表示、`thumbnail` が `None` なら非表示)
 3. **AI 回答欄**: `QTextEdit` → `QWebEngineView` に差し替え
    - Markdown → HTML 変換は `markdown` ライブラリ (`fenced_code`, `tables` extensions)
-   - 数式レンダリングは KaTeX (ローカルバンドル推奨、`resources/katex/` に配置)
+    - 数式・化学式レンダリングは KaTeX + `mhchem` (ローカルバンドル推奨、`src/pdf_epub_reader/resources/katex/` に配置)
+    - 同梱ファイルは `katex.min.css`、`katex.min.js`、`contrib/auto-render.min.js`、`contrib/mhchem.min.js`、`fonts/` を最小構成とする
    - `_render_markdown_html(md_text: str) -> str` メソッドを View 内に実装（表示形式の責務）
 
 ### **7. 設定 — `utils/config.py`**
@@ -244,6 +245,7 @@ auto_detect_math_fonts: bool = True
 | `PySide6-WebEngine` | AI 回答欄の HTML/Markdown/数式レンダリング             |
 | `markdown`          | Python 側 Markdown → HTML 変換                         |
 | KaTeX (JS/CSS)      | LaTeX 数式のブラウザ内レンダリング（ローカルバンドル） |
+| KaTeX `mhchem`      | `\ce{...}` 化学式レンダリング                          |
 
 ---
 

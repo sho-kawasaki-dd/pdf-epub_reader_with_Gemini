@@ -149,7 +149,7 @@ pdf-epub_reader_with_Gemini/
 
 ### **4.4. AI回答欄の Markdown・数式レンダリング**
 
-Gemini の応答は Markdown 形式（見出し、箇条書き、コードブロック、LaTeX 数式 `$...$` / `$$...$$`）で返るため、サイドパネルの AI 回答欄は `QWebEngineView` + `markdown` ライブラリ + KaTeX（ローカルバンドル）で描画する。Markdown→HTML 変換は View 層の責務とし、Presenter は生の Markdown 文字列を渡すだけに徹する。
+Gemini の応答は Markdown 形式（見出し、箇条書き、コードブロック、LaTeX 数式 `$...$` / `$$...$$`、化学式 `\ce{...}`）で返るため、サイドパネルの AI 回答欄は `QWebEngineView` + `markdown` ライブラリ + KaTeX（ローカルバンドル）で描画する。Markdown→HTML 変換は View 層の責務とし、Presenter は生の Markdown 文字列を渡すだけに徹する。KaTeX バンドルは `src/pdf_epub_reader/resources/katex/` に同梱し、最低限 `katex.min.css`、`katex.min.js`、`contrib/auto-render.min.js`、`contrib/mhchem.min.js`、`fonts/` を配置する。
 
 ### **4.5. 非同期処理のアーキテクチャ図**
 
@@ -194,7 +194,7 @@ Gemini の応答は Markdown 形式（見出し、箇条書き、コードブロ
 - **Phase 1: インターフェースとDTOの定義:** `interfaces/view_interfaces.py` に Protocol を用いてViewが持つべきメソッドを定義する。`dto/` にデータ転送オブジェクトを定義する。その後、GUIを使わずにコンソール出力だけで動く「ダミーのView」とPresenterを作成し、ロジックの流れを確認する。
 - **Phase 2: ViewのPySide6実装:** Phase 1で定義したインターフェースを満たす `views/main_window.py` 等を実装し、`infrastructure/event_loop.py` でqasyncを設定、Presenterと結合する。
 - **Phase 3: Modelの実装 (PyMuPDF):** `document_model.py` を実装し、PDFの画像レンダリング（`run_in_executor`）と仮想スクロール向けのデータ供給、および座標からのテキスト抽出を完成させる。Phase 3 では `utils/config.py` に `AppConfig` dataclass と JSON 永続化を導入し、レンダリング設定（画像フォーマット PNG/JPEG 切替、JPEG 品質、キャッシュサイズ等）をコードレベルで変更可能にする。
-- **Phase 4: マルチモーダル矩形選択の実装:** 矩形選択をテキスト専用からマルチモーダル（テキスト＋画像＋数式）に拡張する。DTO に `SelectionContent` を新設し、DocumentModel に `extract_content` メソッド（埋め込み画像検出・数式フォント検出・クロップ画像生成）を追加する。`AppConfig` に `auto_detect_embedded_images` / `auto_detect_math_fonts` トグル（デフォルト ON）を追加し JSON 永続化する。サイドパネルに「画像としても送信」チェックボックス（セッション内、デフォルト OFF）を追加し、AI 回答欄を `QWebEngineView` + `markdown` + KaTeX による Markdown・数式レンダリングに差し替える。`AnalysisRequest` に `images` フィールドを追加し、AIModel はその有無でテキストのみ / マルチモーダル API 呼び出しを切り替える。追加依存: `PySide6-WebEngine`, `markdown`, KaTeX（ローカルバンドル）。詳細は `Phase4_Multimodal_Selection.md` を参照。
+- **Phase 4: マルチモーダル矩形選択の実装:** 矩形選択をテキスト専用からマルチモーダル（テキスト＋画像＋数式）に拡張する。DTO に `SelectionContent` を新設し、DocumentModel に `extract_content` メソッド（埋め込み画像検出・数式フォント検出・クロップ画像生成）を追加する。`AppConfig` に `auto_detect_embedded_images` / `auto_detect_math_fonts` トグル（デフォルト ON）を追加し JSON 永続化する。サイドパネルに「画像としても送信」チェックボックス（セッション内、デフォルト OFF）を追加し、AI 回答欄を `QWebEngineView` + `markdown` + KaTeX による Markdown・数式・化学式レンダリングに差し替える。`AnalysisRequest` に `images` フィールドを追加し、AIModel はその有無でテキストのみ / マルチモーダル API 呼び出しを切り替える。KaTeX ローカルバンドルは `src/pdf_epub_reader/resources/katex/` に `katex.min.css`、`katex.min.js`、`contrib/auto-render.min.js`、`contrib/mhchem.min.js`、`fonts/` を同梱する。追加依存: `PySide6-WebEngine`, `markdown`, KaTeX（ローカルバンドル）。詳細は `Phase4_Multimodal_Selection.md` を参照。
 - **Phase 5: 包括的設定ダイアログの実装:** Phase 3 で導入した `AppConfig` の値（Phase 4 で追加した自動検出トグルを含む）をユーザーが GUI 上で変更・保存できる設定ダイアログを実装する。対象設定項目は画像フォーマット（PNG/JPEG）、JPEG 品質、ページキャッシュ上限、デフォルト DPI、埋め込み画像自動検出、数式フォント自動検出等。MVP パターンに従い、設定ダイアログ用の View Protocol・Presenter・View 実装を追加する。設定変更は即座に `AppConfig` へ反映し、JSON ファイルへ永続化する。
 - **Phase 6: Modelの実装 (Gemini API):** `ai_model.py` を `async def` で実装し、Gemini APIへの通常リクエスト（ネイティブ `await`）と結果の返却を実現する。`AnalysisRequest.images` が存在する場合はマルチモーダル入力として送信する。
 - **Phase 7: Context Cachingの実装:** 全文抽出とキャッシュ作成機能、最小トークン制限の回避ロジックをModelに組み込み、Presenter経由でView（有効期限やステータス）を更新する。
