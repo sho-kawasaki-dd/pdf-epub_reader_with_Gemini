@@ -126,6 +126,16 @@ class ISidePanelView(Protocol):
     # --- Display commands (Presenter → View) ---
 
     def set_selected_text(self, text: str) -> None: ...
+    def set_selected_content_preview(
+        self, text: str, thumbnail: bytes | None
+    ) -> None:
+        """選択テキストとサムネイル画像のプレビューを表示する。
+
+        Phase 4 で追加。テキストに加え、クロップ画像のサムネイルも
+        表示できるようにする。thumbnail が None ならサムネイルは非表示。
+        """
+        ...
+
     def update_result_text(self, text: str) -> None: ...
     def show_loading(self, loading: bool) -> None: ...
     def update_cache_status_brief(self, text: str) -> None: ...
@@ -142,3 +152,12 @@ class ISidePanelView(Protocol):
     def set_on_tab_changed(
         self, cb: Callable[[str], None]
     ) -> None: ...
+    def set_on_force_image_toggled(
+        self, cb: Callable[[bool], None]
+    ) -> None:
+        """「画像としても送信」チェックボックスの切り替えコールバックを登録する。
+
+        Phase 4 で追加。ユーザーがクロップ画像の強制送信を ON/OFF した
+        ときに Presenter へ通知する。
+        """
+        ...

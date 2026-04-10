@@ -15,7 +15,7 @@ from pdf_epub_reader.dto import PageData, RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
-from pdf_epub_reader.utils.config import DEFAULT_DPI
+from pdf_epub_reader.utils.config import DEFAULT_DPI, AppConfig
 from pdf_epub_reader.utils.exceptions import (
     DocumentOpenError,
     DocumentPasswordRequired,
@@ -34,6 +34,7 @@ class MainPresenter:
         view: IMainView,
         document_model: IDocumentModel,
         panel_presenter: PanelPresenter,
+        config: AppConfig | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -41,10 +42,16 @@ class MainPresenter:
         - Presenter の生成完了時点で View と接続された状態を保証したい
         - 接続漏れによる「ボタンを押しても何も起きない」を防ぎたい
         - テスト時に生成直後からイベントをシミュレートできるようにしたい
+
+        Args:
+            config: AppConfig を渡すことで自動検出設定 (auto_detect_embedded_images,
+                    auto_detect_math_fonts) を extract_content に引き渡す。
+                    None の場合はデフォルト値を使用する。
         """
         self._view = view
         self._document_model = document_model
         self._panel_presenter = panel_presenter
+        self._config = config or AppConfig()
         self._current_dpi: int = DEFAULT_DPI
         self._zoom_level: float = 1.0
 
@@ -143,14 +150,34 @@ class MainPresenter:
     async def _do_area_selected(
         self, page_number: int, rect: RectCoords
     ) -> None:
-        """選択範囲を強調表示し、その範囲のテキストを抽出してパネルへ渡す。
+        """選択範囲を強調表示し、マルチモーダルコンテンツを抽出してパネルへ渡す。
 
         まずハイライトを先に出すのは、抽出完了前でもユーザーに
         「選択が受理された」ことを即時に伝えるため。
+
+        Phase 4 で extract_text → extract_content に切り替え、
+        埋め込み画像や数式フォントの自動検出結果も含めてパネルへ渡す。
+        自動検出でクロップ画像が付与された場合はステータスバーで通知する。
         """
         self._view.show_selection_highlight(page_number, rect)
-        selection = await self._document_model.extract_text(page_number, rect)
-        self._panel_presenter.set_selected_text(selection.extracted_text)
+        content = await self._document_model.extract_content(
+            page_number,
+            rect,
+            self._current_dpi,
+            force_include_image=self._panel_presenter.force_include_image,
+            auto_detect_embedded_images=self._config.auto_detect_embedded_images,
+            auto_detect_math_fonts=self._config.auto_detect_math_fonts,
+        )
+        # 自動検出でクロップ画像が付与された場合、ユーザーに理由を通知する
+        if content.cropped_image and content.detection_reason:
+            reason_label = {
+                "embedded_image": "画像",
+                "math_font": "数式",
+            }[content.detection_reason]
+            self._view.show_status_message(
+                f"{reason_label}を検出 — 画像付きで送信します"
+            )
+        self._panel_presenter.set_selected_content(content)
 
     def _on_zoom_changed(self, level: float) -> None:
         """ズーム変更イベントを受け取り、再描画処理を非同期で開始する。"""

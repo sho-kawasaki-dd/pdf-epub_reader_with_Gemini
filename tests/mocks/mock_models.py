@@ -14,6 +14,7 @@ from pdf_epub_reader.dto import (
     DocumentInfo,
     PageData,
     RectCoords,
+    SelectionContent,
     TextSelection,
 )
 from pdf_epub_reader.utils.exceptions import (
@@ -35,6 +36,9 @@ class MockDocumentModel:
         self._should_require_password: bool = False
         # パスワード認証時に受け入れるパスワード。
         self._accepted_password: str = "test123"
+        # テストで自動検出シナリオを制御するフラグ。
+        # None 以外を設定すると extract_content がクロップ画像付きで返す。
+        self._simulate_detection_reason: str | None = None
 
     async def open_document(
         self, file_path: str, password: str | None = None
@@ -95,6 +99,40 @@ class MockDocumentModel:
             rect=rect,
             extracted_text="Mock extracted text from page "
             + str(page_number),
+        )
+
+    async def extract_content(
+        self,
+        page_number: int,
+        rect: RectCoords,
+        dpi: int,
+        force_include_image: bool = False,
+        auto_detect_embedded_images: bool = True,
+        auto_detect_math_fonts: bool = True,
+    ) -> SelectionContent:
+        """マルチモーダルコンテンツ抽出のダミー実装。
+
+        force_include_image が True の場合のみダミーのクロップ画像を付与する。
+        テストで伝播チェックに使うため、引数をすべて記録する。
+        """
+        self.calls.append((
+            "extract_content",
+            (page_number, rect, dpi, force_include_image,
+             auto_detect_embedded_images, auto_detect_math_fonts),
+        ))
+        detection = self._simulate_detection_reason
+        cropped = (
+            b"fake-cropped-image"
+            if force_include_image or detection
+            else None
+        )
+        return SelectionContent(
+            page_number=page_number,
+            rect=rect,
+            extracted_text="Mock extracted text from page "
+            + str(page_number),
+            cropped_image=cropped,
+            detection_reason=detection,
         )
 
     async def extract_all_text(self) -> str:

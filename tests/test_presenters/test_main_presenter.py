@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.mocks.mock_models import MockDocumentModel
+from tests.mocks.mock_models import MockAIModel, MockDocumentModel
 from tests.mocks.mock_views import MockMainView, MockSidePanelView
 
 from pdf_epub_reader.dto import RectCoords
@@ -16,6 +16,7 @@ from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView, ISidePanelView
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
+from pdf_epub_reader.utils.config import AppConfig
 
 
 class TestProtocolConformance:
@@ -95,36 +96,126 @@ class TestOpenFileFlow:
 
 
 class TestAreaSelectionFlow:
-    """矩形選択からテキスト抽出・パネル反映までの流れを検証する。"""
+    """矩形選択からコンテンツ抽出・パネル反映までの流れを検証する。"""
 
     @pytest.mark.asyncio
-    async def test_area_selection_extracts_text(
+    async def test_area_selection_extracts_content(
         self,
         main_presenter: MainPresenter,
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
-        """選択領域が正しく Model と SidePanel に伝播することを確認する。"""
+        """選択領域が extract_content 経由で Model と SidePanel に伝播することを確認する。"""
         rect = RectCoords(x0=10.0, y0=20.0, x1=200.0, y1=50.0)
 
         # 非同期の本処理本体を直接呼び、イベント後の流れだけを検証する。
         await main_presenter._do_area_selected(1, rect)
 
-        # 選択範囲がそのまま Model に渡されていること。
-        extract_calls = mock_document_model.get_calls("extract_text")
+        # Phase 4: extract_text ではなく extract_content が呼ばれること。
+        extract_calls = mock_document_model.get_calls("extract_content")
         assert len(extract_calls) == 1
-        assert extract_calls[0] == (1, rect)
+        page_num, r, dpi, force, auto_img, auto_math = extract_calls[0]
+        assert page_num == 1
+        assert r == rect
+        assert force is False
+        assert auto_img is True
+        assert auto_math is True
 
         # ユーザーへの即時フィードバックとしてハイライトも出ること。
         highlight_calls = mock_main_view.get_calls("show_selection_highlight")
         assert len(highlight_calls) == 1
         assert highlight_calls[0] == (1, rect)
 
-        # 抽出結果が PanelPresenter 経由でサイドパネルまで届くこと。
-        text_calls = mock_side_panel_view.get_calls("set_selected_text")
-        assert len(text_calls) == 1
-        assert "page 1" in text_calls[0][0]
+        # 抽出結果が PanelPresenter 経由でサイドパネルのプレビューに届くこと。
+        preview_calls = mock_side_panel_view.get_calls(
+            "set_selected_content_preview"
+        )
+        assert len(preview_calls) == 1
+        assert "page 1" in preview_calls[0][0]
+
+    @pytest.mark.asyncio
+    async def test_area_selection_with_auto_detection_shows_status(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """自動検出でクロップ画像が付与された場合、ステータスメッセージが出ることを確認する。"""
+        mock_document_model._simulate_detection_reason = "math_font"
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+        )
+        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
+        await presenter._do_area_selected(0, rect)
+
+        status_msgs = mock_main_view.get_calls("show_status_message")
+        assert any("数式" in msg[0] for msg in status_msgs)
+
+    @pytest.mark.asyncio
+    async def test_area_selection_passes_config_settings(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """AppConfig の自動検出設定が extract_content に正しく伝播することを確認する。"""
+        config = AppConfig(
+            auto_detect_embedded_images=False,
+            auto_detect_math_fonts=False,
+        )
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+        )
+        rect = RectCoords(x0=0.0, y0=0.0, x1=50.0, y1=50.0)
+        await presenter._do_area_selected(0, rect)
+
+        extract_calls = mock_document_model.get_calls("extract_content")
+        assert len(extract_calls) == 1
+        _, _, _, _, auto_img, auto_math = extract_calls[0]
+        assert auto_img is False
+        assert auto_math is False
+
+    @pytest.mark.asyncio
+    async def test_area_selection_passes_force_include_image(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """PanelPresenter の force_include_image が extract_content に伝播することを確認する。"""
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+        )
+        # チェックボックスの ON をシミュレート
+        mock_side_panel_view.simulate_force_image_toggled(True)
+
+        rect = RectCoords(x0=0.0, y0=0.0, x1=50.0, y1=50.0)
+        await presenter._do_area_selected(0, rect)
+
+        extract_calls = mock_document_model.get_calls("extract_content")
+        assert len(extract_calls) == 1
+        _, _, _, force, _, _ = extract_calls[0]
+        assert force is True
 
 
 class TestZoomFlow:

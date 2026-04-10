@@ -13,6 +13,7 @@ from tests.mocks.mock_models import MockAIModel
 from tests.mocks.mock_views import MockSidePanelView
 
 from pdf_epub_reader.dto import AnalysisMode
+from pdf_epub_reader.dto.document_dto import RectCoords, SelectionContent
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 
@@ -155,3 +156,134 @@ class TestSetSelectedText:
         text_calls = mock_side_panel_view.get_calls("set_selected_text")
         assert len(text_calls) == 1
         assert text_calls[0] == ("Selected!",)
+
+
+class TestSetSelectedContent:
+    """Phase 4: マルチモーダルコンテンツの保持と View 反映を検証する。"""
+
+    def test_set_selected_content_updates_preview(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """SelectionContent が View のプレビューに反映されることを確認する。"""
+        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
+        content = SelectionContent(
+            page_number=0,
+            rect=rect,
+            extracted_text="Hello math",
+            cropped_image=b"img-data",
+            detection_reason="math_font",
+        )
+        panel_presenter.set_selected_content(content)
+
+        preview_calls = mock_side_panel_view.get_calls(
+            "set_selected_content_preview"
+        )
+        assert len(preview_calls) == 1
+        assert preview_calls[0] == ("Hello math", b"img-data")
+
+    def test_set_selected_content_updates_internal_text(
+        self,
+        panel_presenter: PanelPresenter,
+    ) -> None:
+        """set_selected_content で内部の _selected_text も更新されることを確認する。"""
+        rect = RectCoords(x0=0.0, y0=0.0, x1=50.0, y1=50.0)
+        content = SelectionContent(
+            page_number=0,
+            rect=rect,
+            extracted_text="Updated text",
+        )
+        panel_presenter.set_selected_content(content)
+        assert panel_presenter._selected_text == "Updated text"
+
+
+class TestForceImageToggle:
+    """Phase 4: 「画像としても送信」トグルの状態管理を検証する。"""
+
+    def test_initial_force_include_image_is_false(
+        self,
+        panel_presenter: PanelPresenter,
+    ) -> None:
+        """初期状態では force_include_image が False であることを確認する。"""
+        assert panel_presenter.force_include_image is False
+
+    def test_toggle_updates_state(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_side_panel_view: MockSidePanelView,
+    ) -> None:
+        """チェックボックスの切り替えが内部状態に反映されることを確認する。"""
+        mock_side_panel_view.simulate_force_image_toggled(True)
+        assert panel_presenter.force_include_image is True
+
+        mock_side_panel_view.simulate_force_image_toggled(False)
+        assert panel_presenter.force_include_image is False
+
+
+class TestMultimodalAnalysis:
+    """Phase 4: AI 解析時の画像添付を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_translate_includes_images_when_cropped(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """クロップ画像がある場合、AnalysisRequest.images に含まれることを確認する。"""
+        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
+        content = SelectionContent(
+            page_number=0,
+            rect=rect,
+            extracted_text="Math formula",
+            cropped_image=b"cropped-png",
+        )
+        panel_presenter.set_selected_content(content)
+        await panel_presenter._do_translate(include_explanation=False)
+
+        analyze_calls = mock_ai_model.get_calls("analyze")
+        assert len(analyze_calls) == 1
+        request = analyze_calls[0][0]
+        assert request.images == [b"cropped-png"]
+
+    @pytest.mark.asyncio
+    async def test_translate_no_images_when_text_only(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """クロップ画像が無い場合、AnalysisRequest.images が空であることを確認する。"""
+        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
+        content = SelectionContent(
+            page_number=0,
+            rect=rect,
+            extracted_text="Plain text",
+        )
+        panel_presenter.set_selected_content(content)
+        await panel_presenter._do_translate(include_explanation=False)
+
+        analyze_calls = mock_ai_model.get_calls("analyze")
+        request = analyze_calls[0][0]
+        assert request.images == []
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_includes_images(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """カスタムプロンプトでもクロップ画像が AnalysisRequest に渡ることを確認する。"""
+        rect = RectCoords(x0=0.0, y0=0.0, x1=100.0, y1=100.0)
+        content = SelectionContent(
+            page_number=0,
+            rect=rect,
+            extracted_text="Some content",
+            cropped_image=b"image-bytes",
+        )
+        panel_presenter.set_selected_content(content)
+        await panel_presenter._do_custom_prompt("Explain this")
+
+        analyze_calls = mock_ai_model.get_calls("analyze")
+        request = analyze_calls[0][0]
+        assert request.images == [b"image-bytes"]
+        assert request.mode == AnalysisMode.CUSTOM_PROMPT

@@ -83,6 +83,12 @@ class AppConfig:
     # 最近のファイル
     recent_files: list[str] = field(default_factory=list)
 
+    # Phase 4: 選択領域の自動検出設定
+    # 矩形選択時に埋め込み画像やLaTeX数式フォントを自動検出し、
+    # クロップ画像を Gemini Vision に送信するかを制御する。
+    auto_detect_embedded_images: bool = True
+    auto_detect_math_fonts: bool = True
+
 
 def _get_config_path() -> Path:
     """設定ファイルの保存先パスを返す。

@@ -1,7 +1,8 @@
 """AI 解析 Model のスタブ実装。
 
-Phase 4 で Gemini API ベースの本実装に差し替える。
-Phase 2 では GUI の動作確認用に固定のダミー応答を返す。
+Phase 6 で Gemini API ベースの本実装に差し替える。
+Phase 4 時点ではマルチモーダル入力（images フィールド）に対応した
+ダミー応答を返す。
 """
 
 from __future__ import annotations
@@ -15,12 +16,22 @@ from pdf_epub_reader.dto import (
 
 
 class AIModel:
-    """IAIModel のスタブ実装。Phase 4 で Gemini API に差し替える。"""
+    """IAIModel のスタブ実装。Phase 6 で Gemini API に差し替える。"""
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
-        """モードに応じて固定のダミー翻訳/応答テキストを返す。"""
+        """モードに応じて固定のダミー翻訳/応答テキストを返す。
+
+        request.images が非空の場合はマルチモーダル送信を模擬し、
+        応答に画像枚数を含める。Phase 6 で Gemini API 実装に差し替える際、
+        images の有無で API 呼び出しを分岐する。
+        """
+        # マルチモーダル情報の付記（スタブ用）
+        image_note = ""
+        if request.images:
+            image_note = f"\n[画像 {len(request.images)} 枚を含むマルチモーダル入力]"
+
         if request.mode == AnalysisMode.TRANSLATION:
-            translated = f"[スタブ翻訳] {request.text}"
+            translated = f"[スタブ翻訳] {request.text}{image_note}"
             explanation = (
                 "[スタブ解説] これはスタブの解説テキストです。"
                 if request.include_explanation
@@ -36,7 +47,7 @@ class AIModel:
             response = (
                 f"[スタブ応答]\n"
                 f"プロンプト: {request.custom_prompt}\n"
-                f"対象テキスト: {request.text}"
+                f"対象テキスト: {request.text}{image_note}"
             )
             return AnalysisResult(raw_response=response)
 

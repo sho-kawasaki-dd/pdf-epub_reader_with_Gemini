@@ -150,11 +150,17 @@ class MockSidePanelView:
         self._on_translate_requested: Callable[[bool], None] | None = None
         self._on_custom_prompt_submitted: Callable[[str], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
+        self._on_force_image_toggled: Callable[[bool], None] | None = None
 
     # --- Display commands ---
 
     def set_selected_text(self, text: str) -> None:
         self.calls.append(("set_selected_text", (text,)))
+
+    def set_selected_content_preview(
+        self, text: str, thumbnail: bytes | None
+    ) -> None:
+        self.calls.append(("set_selected_content_preview", (text, thumbnail)))
 
     def update_result_text(self, text: str) -> None:
         self.calls.append(("update_result_text", (text,)))
@@ -181,6 +187,11 @@ class MockSidePanelView:
     def set_on_tab_changed(self, cb: Callable[[str], None]) -> None:
         self._on_tab_changed = cb
 
+    def set_on_force_image_toggled(
+        self, cb: Callable[[bool], None]
+    ) -> None:
+        self._on_force_image_toggled = cb
+
     # --- Simulation helpers ---
 
     def simulate_translate_requested(self, include_explanation: bool) -> None:
@@ -190,6 +201,10 @@ class MockSidePanelView:
     def simulate_custom_prompt_submitted(self, prompt: str) -> None:
         if self._on_custom_prompt_submitted:
             self._on_custom_prompt_submitted(prompt)
+
+    def simulate_force_image_toggled(self, checked: bool) -> None:
+        if self._on_force_image_toggled:
+            self._on_force_image_toggled(checked)
 
     # --- Helpers ---
 

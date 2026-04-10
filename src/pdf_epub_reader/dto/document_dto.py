@@ -9,6 +9,10 @@ dataclass で表現し、このモジュールに集約する。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass(frozen=True)
@@ -97,3 +101,34 @@ class DocumentInfo:
     title: str | None = None
     toc: list[ToCEntry] = field(default_factory=list)
     page_sizes: list[tuple[float, float]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SelectionContent:
+    """矩形選択から抽出されたマルチモーダルコンテンツ。
+
+    Phase 4 で導入。テキストだけでなく、数式や埋め込み画像を含む
+    選択領域の全情報をまとめて Presenter に返すためのデータ型。
+
+    既存の ``TextSelection`` はテキスト専用で後方互換のため残すが、
+    新規のマルチモーダルフローではこちらを使用する。
+
+    Attributes:
+        page_number: 0-indexed のページ番号。
+        rect: 選択矩形の PDF ポイント座標。
+        extracted_text: 選択矩形内のプレーンテキスト（常に抽出される）。
+        cropped_image: 選択矩形をページ画像からクロップした PNG バイト列。
+            自動検出またはユーザートグルにより付与される。不要時は None。
+        embedded_images: PDF 内にオブジェクトとして埋め込まれた画像を
+            個別に抽出したバイト列リスト。埋め込み画像検出時のみ使用。
+        detection_reason: 自動検出でクロップ画像を付与した理由。
+            ``"embedded_image"`` / ``"math_font"`` / ``None``。
+            ユーザーがトグルで強制した場合は ``None``。
+    """
+
+    page_number: int
+    rect: RectCoords
+    extracted_text: str
+    cropped_image: bytes | None = None
+    embedded_images: list[bytes] = field(default_factory=list)
+    detection_reason: str | None = None

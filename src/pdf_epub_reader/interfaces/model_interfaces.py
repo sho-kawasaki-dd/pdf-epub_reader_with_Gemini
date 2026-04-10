@@ -16,6 +16,7 @@ from pdf_epub_reader.dto import (
     DocumentInfo,
     PageData,
     RectCoords,
+    SelectionContent,
     TextSelection,
 )
 
@@ -39,6 +40,15 @@ class IDocumentModel(Protocol):
     async def extract_text(
         self, page_number: int, rect: RectCoords
     ) -> TextSelection: ...
+    async def extract_content(
+        self,
+        page_number: int,
+        rect: RectCoords,
+        dpi: int,
+        force_include_image: bool = False,
+        auto_detect_embedded_images: bool = True,
+        auto_detect_math_fonts: bool = True,
+    ) -> SelectionContent: ...
     async def extract_all_text(self) -> str: ...
     def close_document(self) -> None: ...
     def get_document_info(self) -> DocumentInfo | None: ...
