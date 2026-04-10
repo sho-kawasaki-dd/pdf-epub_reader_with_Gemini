@@ -17,6 +17,7 @@ from pdf_epub_reader.dto import (
     RectCoords,
     SelectionContent,
     TextSelection,
+    ToCEntry,
 )
 from pdf_epub_reader.utils.exceptions import (
     DocumentOpenError,
@@ -40,6 +41,11 @@ class MockDocumentModel:
         # テストで自動検出シナリオを制御するフラグ。
         # None 以外を設定すると extract_content がクロップ画像付きで返す。
         self._simulate_detection_reason: str | None = None
+        self._toc_entries: list[ToCEntry] = [
+            ToCEntry(title="Chapter 1", page_number=0, level=1),
+            ToCEntry(title="Section 1.1", page_number=1, level=2),
+            ToCEntry(title="Chapter 2", page_number=2, level=1),
+        ]
 
     async def open_document(
         self, file_path: str, password: str | None = None
@@ -58,6 +64,7 @@ class MockDocumentModel:
             file_path=file_path,
             total_pages=3,
             title="Mock Document",
+            toc=list(self._toc_entries),
             page_sizes=[(612.0, 792.0)] * 3,
         )
         return self._document_info

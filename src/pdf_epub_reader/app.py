@@ -16,6 +16,7 @@ from pdf_epub_reader.models.document_model import DocumentModel
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.utils.config import ENV_GEMINI_API_KEY, load_config
+from pdf_epub_reader.views.bookmark_panel import BookmarkPanelView
 from pdf_epub_reader.views.cache_dialog import CacheDialog
 from pdf_epub_reader.views.main_window import MainWindow
 from pdf_epub_reader.views.settings_dialog import SettingsDialog
@@ -55,8 +56,12 @@ async def _app_main() -> None:
     _ai_model_ref = ai_model  # シャットダウンフック用に参照を保持
 
     # --- Views ---
+    bookmark_panel_view = BookmarkPanelView()
     side_panel_view = SidePanelView()
-    main_window = MainWindow(side_panel=side_panel_view)
+    main_window = MainWindow(
+        side_panel=side_panel_view,
+        bookmark_panel=bookmark_panel_view,
+    )
 
     # --- Presenters ---
     panel_presenter = PanelPresenter(view=side_panel_view, ai_model=ai_model)

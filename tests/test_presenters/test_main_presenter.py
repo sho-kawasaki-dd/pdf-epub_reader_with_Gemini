@@ -16,7 +16,7 @@ from tests.mocks.mock_views import (
     MockSidePanelView,
 )
 
-from pdf_epub_reader.dto import CacheStatus, ModelInfo, RectCoords
+from pdf_epub_reader.dto import CacheStatus, ModelInfo, RectCoords, ToCEntry
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView, ISidePanelView
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
@@ -101,6 +101,53 @@ class TestOpenFileFlow:
         assert len(status_msgs) == 2
         assert "Opening" in status_msgs[0][0]
         assert "3 pages" in status_msgs[1][0]
+
+    @pytest.mark.asyncio
+    async def test_open_file_displays_toc(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """文書を開くと目次データも View に渡されることを確認する。"""
+        mock_document_model._toc_entries = [
+            ToCEntry(title="Intro", page_number=0, level=1),
+            ToCEntry(title="Details", page_number=2, level=1),
+        ]
+
+        await main_presenter.open_file("/fake/doc.pdf")
+
+        toc_calls = mock_main_view.get_calls("display_toc")
+        assert len(toc_calls) == 1
+        assert toc_calls[0][0] == mock_document_model._toc_entries
+
+    @pytest.mark.asyncio
+    async def test_open_file_empty_toc(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+    ) -> None:
+        """目次なし文書でも display_toc([]) が呼ばれることを確認する。"""
+        mock_document_model._toc_entries = []
+
+        await main_presenter.open_file("/fake/doc.pdf")
+
+        toc_calls = mock_main_view.get_calls("display_toc")
+        assert len(toc_calls) == 1
+        assert toc_calls[0] == ([],)
+
+    def test_bookmark_selected_scrolls_to_page(
+        self,
+        main_presenter: MainPresenter,
+        mock_main_view: MockMainView,
+    ) -> None:
+        """しおり項目クリックで該当ページへのスクロールが発行されることを確認する。"""
+        mock_main_view.simulate_bookmark_selected(2)
+
+        scroll_calls = mock_main_view.get_calls("scroll_to_page")
+        assert len(scroll_calls) == 1
+        assert scroll_calls[0] == (2,)
 
 
 class TestAreaSelectionFlow:

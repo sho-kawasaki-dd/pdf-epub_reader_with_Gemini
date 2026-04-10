@@ -84,6 +84,7 @@ class MainPresenter:
         self._view.set_on_recent_file_selected(self._on_recent_file_selected)
         self._view.set_on_area_selected(self._on_area_selected)
         self._view.set_on_zoom_changed(self._on_zoom_changed)
+        self._view.set_on_bookmark_selected(self._on_bookmark_selected)
         self._view.set_on_cache_management_requested(
             self._on_cache_management_requested
         )
@@ -177,6 +178,7 @@ class MainPresenter:
             for i, (pw, ph) in enumerate(doc_info.page_sizes)
         ]
         self._view.display_pages(placeholders)
+        self._view.display_toc(doc_info.toc)
         self._view.show_status_message(
             f"Loaded {doc_info.total_pages} pages"
         )
@@ -242,6 +244,10 @@ class MainPresenter:
     def _on_zoom_changed(self, level: float) -> None:
         """ズーム変更イベントを受け取り、再描画処理を非同期で開始する。"""
         asyncio.ensure_future(self._do_zoom_changed(level))
+
+    def _on_bookmark_selected(self, page_number: int) -> None:
+        """しおり項目選択を受け取り、該当ページへスクロールする。"""
+        self._view.scroll_to_page(page_number)
 
     async def _do_zoom_changed(self, level: float) -> None:
         """ズーム率変更を View のビュー変換に反映する。

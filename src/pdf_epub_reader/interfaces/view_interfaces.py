@@ -17,7 +17,7 @@ from typing import Protocol, runtime_checkable
 
 from typing import Literal
 
-from pdf_epub_reader.dto import CacheStatus, PageData, RectCoords
+from pdf_epub_reader.dto import CacheStatus, PageData, RectCoords, ToCEntry
 
 
 @runtime_checkable
@@ -52,6 +52,7 @@ class IMainView(Protocol):
         ...
 
     def scroll_to_page(self, page_number: int) -> None: ...
+    def display_toc(self, entries: list[ToCEntry]) -> None: ...
     def set_zoom_level(self, level: float) -> None: ...
     def show_selection_highlight(
         self, page_number: int, rect: RectCoords
@@ -108,6 +109,9 @@ class IMainView(Protocol):
     ) -> None: ...
     def set_on_zoom_changed(
         self, cb: Callable[[float], None]
+    ) -> None: ...
+    def set_on_bookmark_selected(
+        self, cb: Callable[[int], None]
     ) -> None: ...
     def set_on_pages_needed(
         self, cb: Callable[[list[int]], None]

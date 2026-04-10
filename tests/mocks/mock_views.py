@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pdf_epub_reader.dto import PageData, RectCoords
+from pdf_epub_reader.dto import PageData, RectCoords, ToCEntry
 from pdf_epub_reader.dto.ai_dto import CacheStatus
 
 
@@ -34,6 +34,7 @@ class MockMainView:
         self._on_recent_file_selected: Callable[[str], None] | None = None
         self._on_area_selected: Callable[[int, RectCoords], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
+        self._on_bookmark_selected: Callable[[int], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
         self._on_pages_needed: Callable[[list[int]], None] | None = None
         self._on_settings_requested: Callable[[], None] | None = None
@@ -49,6 +50,9 @@ class MockMainView:
 
     def scroll_to_page(self, page_number: int) -> None:
         self.calls.append(("scroll_to_page", (page_number,)))
+
+    def display_toc(self, entries: list[ToCEntry]) -> None:
+        self.calls.append(("display_toc", (entries,)))
 
     def set_zoom_level(self, level: float) -> None:
         self.calls.append(("set_zoom_level", (level,)))
@@ -112,6 +116,11 @@ class MockMainView:
     def set_on_zoom_changed(self, cb: Callable[[float], None]) -> None:
         self._on_zoom_changed = cb
 
+    def set_on_bookmark_selected(
+        self, cb: Callable[[int], None]
+    ) -> None:
+        self._on_bookmark_selected = cb
+
     def set_on_cache_management_requested(
         self, cb: Callable[[], None]
     ) -> None:
@@ -143,6 +152,10 @@ class MockMainView:
     def simulate_zoom_changed(self, level: float) -> None:
         if self._on_zoom_changed:
             self._on_zoom_changed(level)
+
+    def simulate_bookmark_selected(self, page_number: int) -> None:
+        if self._on_bookmark_selected:
+            self._on_bookmark_selected(page_number)
 
     def simulate_pages_needed(self, page_numbers: list[int]) -> None:
         if self._on_pages_needed:

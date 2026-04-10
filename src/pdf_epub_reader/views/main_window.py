@@ -33,7 +33,9 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -45,8 +47,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdf_epub_reader.dto import PageData, RectCoords
+from pdf_epub_reader.dto import PageData, RectCoords, ToCEntry
 from pdf_epub_reader.utils.config import (
+    BOOKMARK_PANEL_WIDTH,
     DEFAULT_DPI,
     DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH,
@@ -58,16 +61,21 @@ from pdf_epub_reader.utils.config import (
     ZOOM_MIN,
     ZOOM_STEP,
 )
+from pdf_epub_reader.views.bookmark_panel import BookmarkPanelView
 
 
 class MainWindow(QMainWindow):
     """IMainView Protocol を満たすメインウィンドウ実装。
 
-    外部から SidePanelView (QWidget) をインジェクトし、
-    QSplitter で左にドキュメント表示、右にサイドパネルを配置する。
+    外部からしおりパネルと SidePanelView をインジェクトし、
+    QSplitter で 3 ペインを横並びに配置する。
     """
 
-    def __init__(self, side_panel: QWidget) -> None:
+    def __init__(
+        self,
+        side_panel: QWidget,
+        bookmark_panel: BookmarkPanelView | None = None,
+    ) -> None:
         super().__init__()
         self.setWindowTitle("PDF/EPUB Reader")
         self.resize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
@@ -77,8 +85,13 @@ class MainWindow(QMainWindow):
         self._on_file_dropped: Callable[[str], None] | None = None
         self._on_recent_file_selected: Callable[[str], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
+        self._on_bookmark_selected: Callable[[int], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
         self._on_settings_requested: Callable[[], None] | None = None
+        self._bookmark_has_entries = False
+
+        # Phase 5 で app.py から注入されるまでの互換用デフォルト。
+        self._bookmark_panel = bookmark_panel or BookmarkPanelView()
 
         # --- QSettings で最近のファイルを永続化 ---
         self._settings = QSettings("pdf-epub-reader", "pdf-epub-reader")
@@ -111,16 +124,20 @@ class MainWindow(QMainWindow):
         self._zoom_spinbox = self._overlay.zoom_spinbox
 
         # --- スプリッター ---
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(doc_pane)
-        splitter.addWidget(side_panel)
-        splitter.setSizes(
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self._bookmark_panel)
+        self._splitter.addWidget(doc_pane)
+        self._splitter.addWidget(side_panel)
+        self._splitter.setCollapsible(0, True)
+        self._splitter.setCollapsible(1, False)
+        self._splitter.setSizes(
             [
+                0,
                 DEFAULT_WINDOW_WIDTH * SPLITTER_RATIO[0] // 100,
                 DEFAULT_WINDOW_WIDTH * SPLITTER_RATIO[1] // 100,
             ]
         )
-        self.setCentralWidget(splitter)
+        self.setCentralWidget(self._splitter)
 
         # --- メニューバー ---
         self._build_menu_bar()
@@ -143,7 +160,7 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def _build_menu_bar(self) -> None:
-        """ファイルメニュー・編集メニューを構築する。"""
+        """ファイル・表示・編集・キャッシュメニューを構築する。"""
         menubar = self.menuBar()
         file_menu = menubar.addMenu("ファイル(&F)")
 
@@ -164,6 +181,17 @@ class MainWindow(QMainWindow):
         quit_action = QAction("終了(&Q)", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
+        # --- 表示メニュー ---
+        view_menu = menubar.addMenu("表示(&V)")
+
+        self._bookmark_toggle_action = QAction("しおり(&B)", self)
+        self._bookmark_toggle_action.setShortcut(QKeySequence("Ctrl+B"))
+        self._bookmark_toggle_action.setCheckable(True)
+        self._bookmark_toggle_action.toggled.connect(
+            self._handle_toggle_bookmark
+        )
+        view_menu.addAction(self._bookmark_toggle_action)
 
         # --- 編集メニュー ---
         edit_menu = menubar.addMenu("Edit(&E)")
@@ -222,6 +250,16 @@ class MainWindow(QMainWindow):
         """指定ページが見えるようにスクロールする。"""
         self._doc_view.scroll_to(page_number)
 
+    def display_toc(self, entries: list[ToCEntry]) -> None:
+        """しおりパネルの目次データを更新し、表示状態を同期する。"""
+        self._bookmark_panel.set_toc(entries)
+        self._bookmark_has_entries = bool(entries)
+
+        self._bookmark_toggle_action.blockSignals(True)
+        self._bookmark_toggle_action.setChecked(self._bookmark_has_entries)
+        self._bookmark_toggle_action.blockSignals(False)
+        self._set_bookmark_panel_visible(self._bookmark_has_entries)
+
     def set_zoom_level(self, level: float) -> None:
         """ズームスピンボックスの値を更新し、ビュー変換で拡縮する。
 
@@ -275,6 +313,18 @@ class MainWindow(QMainWindow):
         """重大エラー時にモーダルダイアログを表示する。"""
         QMessageBox.critical(self, title, message)
 
+    def show_password_dialog(self, file_path: str) -> str | None:
+        """パスワード保護文書の入力ダイアログを表示する。"""
+        password, accepted = QInputDialog.getText(
+            self,
+            "パスワード入力",
+            f"パスワード保護された文書です:\n{file_path}\n\nパスワードを入力してください。",
+            echo=QLineEdit.EchoMode.Password,
+        )
+        if not accepted:
+            return None
+        return password
+
     def set_high_quality_downscale(self, enabled: bool) -> None:
         """高品質縮小 (Pillow LANCZOS) の有効/無効を切り替え、即反映する。"""
         self._doc_view._high_quality_downscale = enabled
@@ -305,6 +355,12 @@ class MainWindow(QMainWindow):
     def set_on_zoom_changed(self, cb: Callable[[float], None]) -> None:
         self._on_zoom_changed = cb
         self._doc_view._on_zoom_changed = cb
+
+    def set_on_bookmark_selected(
+        self, cb: Callable[[int], None]
+    ) -> None:
+        self._on_bookmark_selected = cb
+        self._bookmark_panel.set_on_entry_selected(cb)
 
     def set_on_pages_needed(
         self, cb: Callable[[list[int]], None]
@@ -355,6 +411,17 @@ class MainWindow(QMainWindow):
         if self._on_cache_management_requested:
             self._on_cache_management_requested()
 
+    def _handle_toggle_bookmark(self, checked: bool) -> None:
+        """しおりパネルの表示/非表示を切り替える。"""
+        if checked and not self._bookmark_has_entries:
+            self._bookmark_toggle_action.blockSignals(True)
+            self._bookmark_toggle_action.setChecked(False)
+            self._bookmark_toggle_action.blockSignals(False)
+            self._set_bookmark_panel_visible(False)
+            return
+
+        self._set_bookmark_panel_visible(checked)
+
     def _handle_page_spinbox_changed(self, value: int) -> None:
         """ページスピンボックスの値変更でスクロールを実行する。"""
         # スピンボックスは 1-indexed、scroll_to は 0-indexed。
@@ -370,6 +437,26 @@ class MainWindow(QMainWindow):
         self._page_spinbox.blockSignals(True)
         self._page_spinbox.setValue(page_number + 1)  # 0-indexed → 1-indexed
         self._page_spinbox.blockSignals(False)
+
+    def _set_bookmark_panel_visible(self, visible: bool) -> None:
+        """ドキュメント/AI パネル比率を保ったまましおり幅を調整する。"""
+        sizes = self._splitter.sizes()
+        if len(sizes) != 3:
+            return
+
+        _, doc_size, side_size = sizes
+        remaining = doc_size + side_size
+        if remaining <= 0:
+            doc_ratio = SPLITTER_RATIO[0] / (SPLITTER_RATIO[0] + SPLITTER_RATIO[1])
+        else:
+            doc_ratio = doc_size / remaining
+
+        total = sum(sizes)
+        bookmark_size = min(BOOKMARK_PANEL_WIDTH, total) if visible else 0
+        content_total = max(0, total - bookmark_size)
+        new_doc_size = int(content_total * doc_ratio)
+        new_side_size = max(0, content_total - new_doc_size)
+        self._splitter.setSizes([bookmark_size, new_doc_size, new_side_size])
 
     # =========================================================================
     # ドラッグ&ドロップ
@@ -691,7 +778,9 @@ class _DocumentGraphicsView(QGraphicsView):
         pil_img = Image.open(io.BytesIO(image_data))
         new_w = max(1, int(pil_img.width * zoom))
         new_h = max(1, int(pil_img.height * zoom))
-        resized = pil_img.resize((new_w, new_h), Image.LANCZOS)
+        resized = pil_img.resize(
+            (new_w, new_h), Image.Resampling.LANCZOS
+        )
 
         buf = io.BytesIO()
         resized.save(buf, format="PNG")
