@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
+from typing import Literal
+
 from pdf_epub_reader.dto import PageData, RectCoords
 
 
@@ -121,6 +123,14 @@ class IMainView(Protocol):
     def set_on_cache_management_requested(
         self, cb: Callable[[], None]
     ) -> None: ...
+    def set_on_settings_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        """設定ダイアログ起動要求のコールバックを登録する。
+
+        View の Edit > Preferences メニューや Ctrl+, で発火される。
+        """
+        ...
 
 
 @runtime_checkable
@@ -169,4 +179,43 @@ class ISidePanelView(Protocol):
         Phase 4 で追加。ユーザーがクロップ画像の強制送信を ON/OFF した
         ときに Presenter へ通知する。
         """
+        ...
+
+
+@runtime_checkable
+class ISettingsDialogView(Protocol):
+    """設定ダイアログが満たすべき契約。
+
+    Phase 5 で導入。モーダルダイアログとして表示し、
+    ユーザーが OK/Cancel で設定を一括適用する。
+    """
+
+    # --- Getters (Presenter ← View) ---
+
+    def get_render_format(self) -> Literal["png", "jpeg"]: ...
+    def get_jpeg_quality(self) -> int: ...
+    def get_default_dpi(self) -> int: ...
+    def get_page_cache_max_size(self) -> int: ...
+    def get_auto_detect_embedded_images(self) -> bool: ...
+    def get_auto_detect_math_fonts(self) -> bool: ...
+
+    # --- Setters (Presenter → View) ---
+
+    def set_render_format(self, value: Literal["png", "jpeg"]) -> None: ...
+    def set_jpeg_quality(self, value: int) -> None: ...
+    def set_default_dpi(self, value: int) -> None: ...
+    def set_page_cache_max_size(self, value: int) -> None: ...
+    def set_auto_detect_embedded_images(self, value: bool) -> None: ...
+    def set_auto_detect_math_fonts(self, value: bool) -> None: ...
+
+    # --- Callback registration ---
+
+    def set_on_reset_defaults(self, cb: Callable[[], None]) -> None:
+        """「Reset to Defaults」ボタン押下時のコールバックを登録する。"""
+        ...
+
+    # --- Lifecycle ---
+
+    def exec_dialog(self) -> bool:
+        """ダイアログをモーダル表示し、OK なら True / Cancel なら False を返す。"""
         ...

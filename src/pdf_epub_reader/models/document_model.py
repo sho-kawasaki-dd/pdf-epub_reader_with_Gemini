@@ -291,6 +291,16 @@ class DocumentModel:
         """現在開いている文書のメタデータを返す。未オープンなら None。"""
         return self._document_info
 
+    def update_config(self, config: AppConfig) -> None:
+        """アプリケーション設定を更新しページキャッシュをクリアする。
+
+        Phase 5 で追加。設定ダイアログで変更された設定を反映する。
+        キャッシュサイズや画像フォーマットが変わる可能性があるため、
+        既存キャッシュはすべて破棄する。
+        """
+        self._config = config
+        self._page_cache.clear()
+
     # --- Private synchronous methods (executor 内で実行) ---
 
     def _open_document_sync(

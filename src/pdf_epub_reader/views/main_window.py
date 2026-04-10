@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
         self._on_recent_file_selected: Callable[[str], None] | None = None
         self._on_zoom_changed: Callable[[float], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
+        self._on_settings_requested: Callable[[], None] | None = None
 
         # --- QSettings で最近のファイルを永続化 ---
         self._settings = QSettings("pdf-epub-reader", "pdf-epub-reader")
@@ -139,7 +140,7 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def _build_menu_bar(self) -> None:
-        """ファイルメニュー（開く / 最近のファイル / 終了）を構築する。"""
+        """ファイルメニュー・編集メニューを構築する。"""
         menubar = self.menuBar()
         file_menu = menubar.addMenu("ファイル(&F)")
 
@@ -160,6 +161,14 @@ class MainWindow(QMainWindow):
         quit_action = QAction("終了(&Q)", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
+        # --- 編集メニュー ---
+        edit_menu = menubar.addMenu("Edit(&E)")
+
+        preferences_action = QAction("Preferences", self)
+        preferences_action.setShortcut(QKeySequence("Ctrl+,"))
+        preferences_action.triggered.connect(self._handle_settings_requested)
+        edit_menu.addAction(preferences_action)
 
     # =========================================================================
     # ステータスバー構築
@@ -284,6 +293,18 @@ class MainWindow(QMainWindow):
     ) -> None:
         self._on_cache_management_requested = cb
 
+    def set_on_settings_requested(
+        self, cb: Callable[[], None]
+    ) -> None:
+        self._on_settings_requested = cb
+
+    def get_current_page(self) -> int:
+        """現在ビューポート上部に最も近いページの 0-indexed 番号を返す。
+
+        設定ダイアログで DPI 変更後のスクロール位置復元に使用する。
+        """
+        return self._doc_view.get_visible_page()
+
     # =========================================================================
     # Internal handlers
     # =========================================================================
@@ -300,6 +321,11 @@ class MainWindow(QMainWindow):
             # open と drop を統合し、同一のコールバックでパスを渡す。
             self._add_to_recent(file_path)
             self._on_file_dropped(file_path)
+
+    def _handle_settings_requested(self) -> None:
+        """Edit > Preferences / Ctrl+, ハンドラ。コールバック経由で Presenter に通知する。"""
+        if self._on_settings_requested:
+            self._on_settings_requested()
 
     def _handle_page_spinbox_changed(self, value: int) -> None:
         """ページスピンボックスの値変更でスクロールを実行する。"""
@@ -879,6 +905,20 @@ class _DocumentGraphicsView(QGraphicsView):
         """指定ページが見えるようにスクロールする。"""
         if 0 <= page_number < len(self._page_rects):
             self.ensureVisible(self._page_rects[page_number], 0, 50)
+
+    def get_visible_page(self) -> int:
+        """ビューポート上部に最も近いページの 0-indexed 番号を返す。
+
+        DPI 変更後のスクロール位置復元に使用する。
+        ページが存在しない場合は 0 を返す。
+        """
+        if not self._page_rects:
+            return 0
+        viewport_rect = self.mapToScene(self.viewport().rect()).boundingRect()
+        for i, page_rect in enumerate(self._page_rects):
+            if page_rect.intersects(viewport_rect):
+                return i
+        return 0
 
     # =====================================================================
     # 縦フィット (Ctrl+H)

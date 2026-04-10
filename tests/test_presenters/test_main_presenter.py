@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from tests.mocks.mock_models import MockAIModel, MockDocumentModel
-from tests.mocks.mock_views import MockMainView, MockSidePanelView
+from tests.mocks.mock_views import MockMainView, MockSettingsDialogView, MockSidePanelView
 
 from pdf_epub_reader.dto import RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
@@ -392,3 +392,181 @@ class TestDocumentOpenError:
         assert len(error_calls) == 1
         assert "Open Error" in error_calls[0][0]
         assert len(mock_main_view.get_calls("display_pages")) == 0
+
+
+class TestSettingsFlow:
+    """設定ダイアログ経由の設定変更フローを検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_settings_ok_updates_config_and_calls_update_config(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """設定ダイアログで OK → DocumentModel.update_config が呼ばれること。"""
+        config = AppConfig(default_dpi=144)
+        mock_settings_view = MockSettingsDialogView()
+        mock_settings_view._exec_return = True
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            settings_view_factory=lambda: mock_settings_view,
+        )
+        from unittest.mock import patch
+
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter._on_settings_requested()
+
+        update_calls = mock_document_model.get_calls("update_config")
+        assert len(update_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_settings_cancel_does_not_update(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """設定ダイアログで Cancel → update_config が呼ばれないこと。"""
+        config = AppConfig()
+        mock_settings_view = MockSettingsDialogView()
+        mock_settings_view._exec_return = False
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            settings_view_factory=lambda: mock_settings_view,
+        )
+        presenter._on_settings_requested()
+
+        update_calls = mock_document_model.get_calls("update_config")
+        assert len(update_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_dpi_change_triggers_reload_layout(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """DPI 変更時にプレースホルダー再配置 (display_pages) が行われること。"""
+        config = AppConfig(default_dpi=144)
+        mock_settings_view = MockSettingsDialogView()
+        mock_settings_view._exec_return = True
+        # DPI を 200 に変更するシミュレーション: populate 後に値を変更する
+        # ただし MockSettingsDialogView は populate で値が上書きされるので、
+        # exec_dialog 後に read される値を直接変更する。
+        original_exec = mock_settings_view.exec_dialog
+
+        def exec_with_dpi_change() -> bool:
+            mock_settings_view._values["default_dpi"] = 200
+            return True
+
+        mock_settings_view.exec_dialog = exec_with_dpi_change  # type: ignore[assignment]
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            settings_view_factory=lambda: mock_settings_view,
+        )
+
+        # ドキュメントを開いておく（_reload_layout が get_document_info を参照するため）
+        await presenter.open_file("/fake/doc.pdf")
+        mock_main_view.calls.clear()
+
+        from unittest.mock import patch
+
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter._on_settings_requested()
+
+        # _reload_layout は ensure_future で発火するので、イベントループを進める
+        import asyncio
+
+        await asyncio.sleep(0)
+
+        # DPI 変更により display_pages が再呼び出しされること
+        display_calls = mock_main_view.get_calls("display_pages")
+        assert len(display_calls) >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_dpi_change_does_not_reload_layout(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        """DPI 非変更時には再レイアウトが発生しないこと。"""
+        config = AppConfig(default_dpi=144)
+        mock_settings_view = MockSettingsDialogView()
+        mock_settings_view._exec_return = True
+        # DPI を変更しない（デフォルトのまま）
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=config,
+            settings_view_factory=lambda: mock_settings_view,
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+        mock_main_view.calls.clear()
+
+        from unittest.mock import patch
+
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter._on_settings_requested()
+
+        import asyncio
+
+        await asyncio.sleep(0)
+
+        # DPI が変わっていないので display_pages は呼ばれない
+        display_calls = mock_main_view.get_calls("display_pages")
+        assert len(display_calls) == 0
+
+    def test_no_factory_is_safe_noop(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        panel_presenter: PanelPresenter,
+    ) -> None:
+        """settings_view_factory=None の場合、設定リクエストは安全に無視される。"""
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel_presenter,
+            settings_view_factory=None,
+        )
+        # 例外が発生しないこと
+        presenter._on_settings_requested()

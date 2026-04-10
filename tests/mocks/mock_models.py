@@ -149,6 +149,10 @@ class MockDocumentModel:
         """最後に open した文書情報を返す。"""
         return self._document_info
 
+    def update_config(self, config) -> None:
+        """設定更新呼び出しを記録する。"""
+        self.calls.append(("update_config", (config,)))
+
     def get_calls(self, method_name: str) -> list[tuple]:
         """指定メソッドの呼び出し引数一覧を返す。"""
         return [args for name, args in self.calls if name == method_name]

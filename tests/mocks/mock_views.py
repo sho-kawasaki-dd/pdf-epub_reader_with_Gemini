@@ -35,6 +35,10 @@ class MockMainView:
         self._on_zoom_changed: Callable[[float], None] | None = None
         self._on_cache_management_requested: Callable[[], None] | None = None
         self._on_pages_needed: Callable[[list[int]], None] | None = None
+        self._on_settings_requested: Callable[[], None] | None = None
+
+        # get_current_page が返す固定値。テストで変更可能。
+        self._current_page: int = 0
 
     # --- Display commands ---
     # 実 UI ではここで描画や画面更新が行われるが、Mock では記録だけを行う。
@@ -75,6 +79,10 @@ class MockMainView:
         """テスト環境では標準 DPI モニター相当の 1.0 を返す。"""
         return 1.0
 
+    def get_current_page(self) -> int:
+        """現在表示中のページ番号を返す Mock。"""
+        return self._current_page
+
     def show_password_dialog(self, file_path: str) -> str | None:
         """パスワード入力ダイアログの Mock。_password_dialog_return を返す。"""
         self.calls.append(("show_password_dialog", (file_path,)))
@@ -108,6 +116,9 @@ class MockMainView:
     def set_on_pages_needed(self, cb: Callable[[list[int]], None]) -> None:
         self._on_pages_needed = cb
 
+    def set_on_settings_requested(self, cb: Callable[[], None]) -> None:
+        self._on_settings_requested = cb
+
     # --- Simulation helpers (for triggering callbacks in tests) ---
     # テストコードからユーザー操作を模擬するための補助メソッド群。
 
@@ -132,6 +143,10 @@ class MockMainView:
     def simulate_pages_needed(self, page_numbers: list[int]) -> None:
         if self._on_pages_needed:
             self._on_pages_needed(page_numbers)
+
+    def simulate_settings_requested(self) -> None:
+        if self._on_settings_requested:
+            self._on_settings_requested()
 
     # --- Helpers ---
 
@@ -209,6 +224,97 @@ class MockSidePanelView:
     def simulate_force_image_toggled(self, checked: bool) -> None:
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
+
+    # --- Helpers ---
+
+    def get_calls(self, method_name: str) -> list[tuple]:
+        """指定メソッドの呼び出し引数一覧を返す。"""
+        return [args for name, args in self.calls if name == method_name]
+
+
+class MockSettingsDialogView:
+    """ISettingsDialogView を満たすテスト用ダミー実装。
+
+    辞書ベースの set/get で値を保持し、exec_dialog の返り値は
+    テスト側から _exec_return で制御する。
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple]] = []
+        self._values: dict[str, object] = {
+            "render_format": "png",
+            "jpeg_quality": 85,
+            "default_dpi": 144,
+            "page_cache_max_size": 50,
+            "auto_detect_embedded_images": True,
+            "auto_detect_math_fonts": True,
+        }
+        # exec_dialog が返す固定値。True = OK、False = Cancel。
+        self._exec_return: bool = True
+        self._on_reset_defaults: Callable[[], None] | None = None
+
+    # --- Getters ---
+
+    def get_render_format(self):
+        return self._values["render_format"]
+
+    def get_jpeg_quality(self) -> int:
+        return self._values["jpeg_quality"]
+
+    def get_default_dpi(self) -> int:
+        return self._values["default_dpi"]
+
+    def get_page_cache_max_size(self) -> int:
+        return self._values["page_cache_max_size"]
+
+    def get_auto_detect_embedded_images(self) -> bool:
+        return self._values["auto_detect_embedded_images"]
+
+    def get_auto_detect_math_fonts(self) -> bool:
+        return self._values["auto_detect_math_fonts"]
+
+    # --- Setters ---
+
+    def set_render_format(self, value) -> None:
+        self.calls.append(("set_render_format", (value,)))
+        self._values["render_format"] = value
+
+    def set_jpeg_quality(self, value: int) -> None:
+        self.calls.append(("set_jpeg_quality", (value,)))
+        self._values["jpeg_quality"] = value
+
+    def set_default_dpi(self, value: int) -> None:
+        self.calls.append(("set_default_dpi", (value,)))
+        self._values["default_dpi"] = value
+
+    def set_page_cache_max_size(self, value: int) -> None:
+        self.calls.append(("set_page_cache_max_size", (value,)))
+        self._values["page_cache_max_size"] = value
+
+    def set_auto_detect_embedded_images(self, value: bool) -> None:
+        self.calls.append(("set_auto_detect_embedded_images", (value,)))
+        self._values["auto_detect_embedded_images"] = value
+
+    def set_auto_detect_math_fonts(self, value: bool) -> None:
+        self.calls.append(("set_auto_detect_math_fonts", (value,)))
+        self._values["auto_detect_math_fonts"] = value
+
+    # --- Callback registration ---
+
+    def set_on_reset_defaults(self, cb: Callable[[], None]) -> None:
+        self._on_reset_defaults = cb
+
+    # --- Lifecycle ---
+
+    def exec_dialog(self) -> bool:
+        self.calls.append(("exec_dialog", ()))
+        return self._exec_return
+
+    # --- Simulation helpers ---
+
+    def simulate_reset_defaults(self) -> None:
+        if self._on_reset_defaults:
+            self._on_reset_defaults()
 
     # --- Helpers ---
 

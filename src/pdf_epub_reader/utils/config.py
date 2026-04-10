@@ -52,6 +52,14 @@ MAX_RECENT_FILES = 10
 # --- 環境変数名 ---
 ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
 
+# --- バリデーション定数 (Phase 5: 設定ダイアログ) ---
+DPI_MIN = 72
+DPI_MAX = 600
+JPEG_QUALITY_MIN = 1
+JPEG_QUALITY_MAX = 100
+PAGE_CACHE_MIN = 1
+PAGE_CACHE_MAX = 500
+
 
 # ---------------------------------------------------------------------------
 # AppConfig: ユーザーが変更可能な設定をまとめた dataclass

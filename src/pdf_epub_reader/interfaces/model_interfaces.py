@@ -19,6 +19,7 @@ from pdf_epub_reader.dto import (
     SelectionContent,
     TextSelection,
 )
+from pdf_epub_reader.utils.config import AppConfig
 
 
 @runtime_checkable
@@ -52,6 +53,13 @@ class IDocumentModel(Protocol):
     async def extract_all_text(self) -> str: ...
     def close_document(self) -> None: ...
     def get_document_info(self) -> DocumentInfo | None: ...
+    def update_config(self, config: AppConfig) -> None:
+        """アプリケーション設定を更新しページキャッシュをクリアする。
+
+        Phase 5 で追加。設定ダイアログで変更された設定を
+        DocumentModel に反映するために Presenter が呼び出す。
+        """
+        ...
 
 
 @runtime_checkable

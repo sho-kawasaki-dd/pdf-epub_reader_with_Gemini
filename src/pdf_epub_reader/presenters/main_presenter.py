@@ -10,11 +10,16 @@ MainPresenter の役割は、メインウィンドウで発生したユーザー
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from pdf_epub_reader.dto import PageData, RectCoords
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
-from pdf_epub_reader.interfaces.view_interfaces import IMainView
+from pdf_epub_reader.interfaces.view_interfaces import (
+    IMainView,
+    ISettingsDialogView,
+)
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
+from pdf_epub_reader.presenters.settings_presenter import SettingsPresenter
 from pdf_epub_reader.utils.config import AppConfig
 from pdf_epub_reader.utils.exceptions import (
     DocumentOpenError,
@@ -35,6 +40,7 @@ class MainPresenter:
         document_model: IDocumentModel,
         panel_presenter: PanelPresenter,
         config: AppConfig | None = None,
+        settings_view_factory: Callable[[], ISettingsDialogView] | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -47,11 +53,15 @@ class MainPresenter:
             config: AppConfig を渡すことで自動検出設定 (auto_detect_embedded_images,
                     auto_detect_math_fonts) を extract_content に引き渡す。
                     None の場合はデフォルト値を使用する。
+            settings_view_factory: 設定ダイアログ View のファクトリ。
+                    呼び出すたびに新しい ISettingsDialogView を返す。
+                    None の場合は設定ダイアログ機能を無効化する。
         """
         self._view = view
         self._document_model = document_model
         self._panel_presenter = panel_presenter
         self._config = config or AppConfig()
+        self._settings_view_factory = settings_view_factory
         self._base_dpi: int = self._config.default_dpi
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
@@ -67,6 +77,7 @@ class MainPresenter:
             self._on_cache_management_requested
         )
         self._view.set_on_pages_needed(self._on_pages_needed)
+        self._view.set_on_settings_requested(self._on_settings_requested)
 
     # --- Public API ---
 
@@ -219,3 +230,63 @@ class MainPresenter:
             )
             pages.append(page)
         self._view.update_pages(pages)
+
+    # --- Settings dialog ---
+
+    def _on_settings_requested(self) -> None:
+        """設定ダイアログの起動を非同期タスクとして開始する。
+
+        SettingsPresenter.show() は同期的にダイアログを実行するため、
+        ここではその結果を受けて設定変更を適用する。
+        """
+        if self._settings_view_factory is None:
+            return
+        settings_view = self._settings_view_factory()
+        presenter = SettingsPresenter(settings_view, self._config)
+        new_config = presenter.show()
+        if new_config is not None:
+            self._apply_config_changes(new_config)
+
+    def _apply_config_changes(self, new_config: AppConfig) -> None:
+        """新しい設定を各コンポーネントに反映する。
+
+        DPI が変更された場合のみプレースホルダーの再配置と再レンダリングを行う。
+        それ以外の設定変更は DocumentModel への反映のみで済む。
+        """
+        old_dpi = self._config.default_dpi
+        self._config = new_config
+        self._document_model.update_config(new_config)
+
+        if old_dpi != new_config.default_dpi:
+            self._base_dpi = new_config.default_dpi
+            dpr = self._view.get_device_pixel_ratio()
+            self._render_dpi = int(self._base_dpi * dpr)
+            asyncio.ensure_future(self._reload_layout())
+
+    async def _reload_layout(self) -> None:
+        """DPI 変更後にプレースホルダーを再計算し再描画する。
+
+        現在表示中のページ番号を記憶し、再レイアウト後にスクロール位置を復元する。
+        """
+        doc_info = self._document_model.get_document_info()
+        if doc_info is None:
+            return
+
+        # 現在ページを記憶する（get_current_page が未実装の場合は 0）
+        try:
+            current_page = self._view.get_current_page()
+        except (AttributeError, NotImplementedError):
+            current_page = 0
+
+        scale = self._base_dpi / 72.0
+        placeholders = [
+            PageData(
+                page_number=i,
+                image_data=b"",
+                width=int(pw * scale),
+                height=int(ph * scale),
+            )
+            for i, (pw, ph) in enumerate(doc_info.page_sizes)
+        ]
+        self._view.display_pages(placeholders)
+        self._view.scroll_to_page(current_page)
