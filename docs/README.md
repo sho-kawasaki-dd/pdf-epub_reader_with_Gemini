@@ -1,6 +1,11 @@
 # Documentation
 
-This directory contains end-user and developer documentation for PDF/EPUB Reader with Gemini.
+This directory contains end-user and developer documentation for Gem Read.
+
+## Supported Launch Paths
+
+- Windows PowerShell: `.\gem-read_launch.ps1`
+- Canonical module entry point: `uv run python -m pdf_epub_reader`
 
 ## User Docs
 

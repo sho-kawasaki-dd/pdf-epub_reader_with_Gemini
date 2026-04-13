@@ -1,5 +1,10 @@
 # Core Operations
 
+## Launch the Application
+
+- On Windows PowerShell, run `.\gem-read_launch.ps1` from the repository root.
+- The launcher script delegates to `uv run python -m pdf_epub_reader`.
+
 ## Open a Document
 
 - Use the open command from the menu.

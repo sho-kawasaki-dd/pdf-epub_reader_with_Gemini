@@ -1,6 +1,6 @@
 # User Manual
 
-This section is the user-facing manual for PDF/EPUB Reader with Gemini.
+This section is the user-facing manual for Gem Read.
 
 ## Recommended Reading Order
 
@@ -12,4 +12,5 @@ This section is the user-facing manual for PDF/EPUB Reader with Gemini.
 ## Scope
 
 These pages focus on how to install, configure, and use the desktop application.
+On Windows PowerShell, the recommended launcher is `.\gem-read_launch.ps1` from the repository root.
 They do not cover internal MVP architecture or test strategy.

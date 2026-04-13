@@ -2,6 +2,11 @@
 
 This section explains how the application is structured and which diagrams should be used to understand or extend it.
 
+## Supported Local Launch Paths
+
+- Windows PowerShell wrapper: `.\gem-read_launch.ps1`
+- Canonical module startup: `uv run python -m pdf_epub_reader`
+
 ## Read First
 
 1. [docs/developer/architecture.md](docs/developer/architecture.md)

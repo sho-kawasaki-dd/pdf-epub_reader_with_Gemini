@@ -1,5 +1,7 @@
 # Settings and Cache
 
+These settings apply regardless of whether you launch Gem Read with `.\gem-read_launch.ps1` or `uv run python -m pdf_epub_reader`.
+
 ## Settings Dialog
 
 The settings dialog is split into three tabs.

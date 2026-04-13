@@ -20,8 +20,8 @@ import platformdirs
 logger = logging.getLogger(__name__)
 
 # --- アプリケーション識別 ---
-_APP_NAME = "pdf-epub-reader"
-_APP_AUTHOR = "pdf-epub-reader"
+_APP_NAME = "gem-read"
+_APP_AUTHOR = "gem-read"
 
 # --- ウィンドウ ---
 DEFAULT_WINDOW_WIDTH = 1280
@@ -198,9 +198,9 @@ def _get_config_path() -> Path:
     """設定ファイルの保存先パスを返す。
 
     platformdirs を使ってOS標準のユーザー設定ディレクトリを取得する。
-    - Windows: %LOCALAPPDATA%/pdf-epub-reader/config.json
-    - macOS:   ~/Library/Application Support/pdf-epub-reader/config.json
-    - Linux:   ~/.config/pdf-epub-reader/config.json
+    - Windows: %LOCALAPPDATA%/gem-read/config.json
+    - macOS:   ~/Library/Application Support/gem-read/config.json
+    - Linux:   ~/.config/gem-read/config.json
     """
     config_dir = Path(platformdirs.user_config_dir(_APP_NAME, _APP_AUTHOR))
     return config_dir / "config.json"

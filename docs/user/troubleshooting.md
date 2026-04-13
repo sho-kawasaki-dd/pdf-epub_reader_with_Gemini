@@ -1,5 +1,14 @@
 # Troubleshooting
 
+## PowerShell Launcher Does Not Start
+
+Check the following:
+
+- Run `.\gem-read_launch.ps1` from the repository root
+- `uv` is installed and available on `PATH`
+- Dependencies have been installed with `uv sync --dev`
+- PowerShell execution policy is not blocking local scripts in the current session
+
 ## AI Features Do Not Work
 
 Check the following:

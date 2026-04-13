@@ -29,6 +29,7 @@ The infrastructure layer integrates Qt and asyncio using qasync, allowing presen
 
 ## Key Entry Points
 
+- Windows launcher: `gem-read_launch.ps1`
 - Application composition: `src/pdf_epub_reader/app.py`
 - Event loop integration: `src/pdf_epub_reader/infrastructure/event_loop.py`
 - Main UI orchestration: `src/pdf_epub_reader/presenters/main_presenter.py`

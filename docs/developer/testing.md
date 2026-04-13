@@ -43,3 +43,8 @@ Presenter tests cover:
 ## Practical Rule
 
 If a new feature adds branching logic, prefer putting that logic in a presenter or model and covering it with tests before expanding the Qt view layer.
+
+## Smoke Launch Checks
+
+- Validate the canonical startup path with `uv run python -m pdf_epub_reader`.
+- On Windows, also validate `.\gem-read_launch.ps1` to ensure the PowerShell wrapper still resolves the repository root correctly.

@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         )
 
         # --- QSettings で最近のファイルを永続化 ---
-        self._settings = QSettings("pdf-epub-reader", "pdf-epub-reader")
+        self._settings = QSettings("gem-read", "gem-read")
 
         # --- ドキュメント表示 ---
         self._doc_view = _DocumentGraphicsView()

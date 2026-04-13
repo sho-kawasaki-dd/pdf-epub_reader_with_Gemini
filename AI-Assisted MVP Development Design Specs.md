@@ -49,7 +49,8 @@ Qt イベントループと asyncio の統合は `qasync` を用い、**infrastr
 `src` レイアウトを採用し、テスト時のimport汚染を防ぐ。コードの生成は以下の構造を前提とすること。
 
 ```
-pdf-epub_reader_with_Gemini/
+gem-read/
+├── gem-read_launch.ps1             # Windows PowerShell launcher (uv run python -m pdf_epub_reader)
 ├── src/
 │   └── pdf_epub_reader/             # パッケージ本体
 │       ├── __init__.py

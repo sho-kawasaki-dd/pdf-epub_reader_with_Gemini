@@ -146,7 +146,7 @@ class TestMainWindowTranslations:
         )
         window.apply_ui_texts(_TRANSLATIONS.build_main_window_texts("en"))
 
-        assert window.windowTitle() == "PDF/EPUB Reader"
+        assert window.windowTitle() == "Gem Read"
         assert window._file_menu.title() == "&File"
         assert window._status_label.text() == "Ready"
         assert bookmark_panel._tree.headerItem().text(0) == "Bookmarks"

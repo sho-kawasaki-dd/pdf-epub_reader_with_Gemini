@@ -2,12 +2,13 @@
 
 ## Startup Flow
 
-1. `python -m pdf_epub_reader` calls `main()`.
-2. `main()` loads `.env` and delegates to `run_app()`.
-3. `run_app()` creates or reuses `QApplication`, installs a qasync event loop, and schedules `_app_main()`.
-4. `_app_main()` creates config, models, views, and presenters.
-5. The main window is shown.
-6. On shutdown, cache invalidation cleanup is attempted before event loop teardown.
+1. On Windows PowerShell, `.\gem-read_launch.ps1` changes to the repository root and runs `uv run python -m pdf_epub_reader`.
+2. `python -m pdf_epub_reader` calls `main()`.
+3. `main()` loads `.env` and delegates to `run_app()`.
+4. `run_app()` creates or reuses `QApplication`, installs a qasync event loop, and schedules `_app_main()`.
+5. `_app_main()` creates config, models, views, and presenters.
+6. The main window is shown.
+7. On shutdown, cache invalidation cleanup is attempted before event loop teardown.
 
 ## Open File Flow
 
