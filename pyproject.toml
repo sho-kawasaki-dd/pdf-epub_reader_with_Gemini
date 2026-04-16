@@ -13,6 +13,8 @@ dependencies = [
     "Pillow>=10.0",
     "platformdirs>=4.0",
     "markdown>=3.5",
+    "uvicorn>=0.44.0",
+    "fastapi>=0.135.3",
 ]
 
 [dependency-groups]
