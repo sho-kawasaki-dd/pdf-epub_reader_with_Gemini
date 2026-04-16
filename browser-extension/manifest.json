@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Gem Read Browser Extension",
+  "version": "1.0.0",
+  "description": "Browser extension for translation and analysis using Gemini API.",
+  "action": {
+    "default_popup": "index.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.ts"]
+    }
+  ],
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  }
+}
