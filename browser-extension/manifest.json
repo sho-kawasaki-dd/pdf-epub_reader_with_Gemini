@@ -6,6 +6,15 @@
   "action": {
     "default_popup": "index.html"
   },
+  "commands": {
+    "gem-read-phase2-start-rectangle": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Start Gem Read rectangle selection"
+    }
+  },
   "permissions": [
     "contextMenus",
     "activeTab",
@@ -13,10 +22,7 @@
     "scripting",
     "storage"
   ],
-  "host_permissions": [
-    "http://127.0.0.1/*",
-    "http://localhost/*"
-  ],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

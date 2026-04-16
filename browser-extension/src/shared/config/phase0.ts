@@ -1,4 +1,6 @@
 export const PHASE0_MENU_ID = 'gem-read-phase0-translate-test';
+export const PHASE2_RECTANGLE_MENU_ID = 'gem-read-phase2-start-rectangle';
+export const PHASE2_RECTANGLE_COMMAND_ID = 'gem-read-phase2-start-rectangle';
 export const DEFAULT_LOCAL_API_PORT = 8000;
 export const DEFAULT_LOCAL_API_BASE_URL = `http://127.0.0.1:${DEFAULT_LOCAL_API_PORT}`;
 export const EXTENSION_SETTINGS_STORAGE_KEY = 'gem-read.settings';
@@ -7,6 +9,7 @@ export const PHASE0_API_BASE_URL = DEFAULT_LOCAL_API_BASE_URL;
 export const OUTPUT_IMAGE_TYPE = 'image/webp';
 export const OUTPUT_IMAGE_QUALITY = 0.82;
 export const OUTPUT_MAX_LONG_EDGE = 768;
+export const MAX_SELECTION_SESSION_ITEMS = 10;
 
 export interface ExtensionSettings {
 	apiBaseUrl: string;

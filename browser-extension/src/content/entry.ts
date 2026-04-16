@@ -1,10 +1,20 @@
 import type {
+  AppendSessionItemResponse,
+  BeginRectangleSelectionResponse,
   CacheOverlaySessionMessage,
   ContentScriptMessage,
   RunOverlayActionResponse,
+  SelectionSessionItem,
   SeedOverlaySessionResponse,
 } from '../shared/contracts/messages';
 import { renderOverlay } from './overlay/renderOverlay';
+import {
+  startRectangleSelection,
+} from './selection/rectangleSelectionController';
+import {
+  clearSelectionBatch,
+  syncSelectionBatch,
+} from './selection/selectionBatchController';
 import {
   collectSelection,
   startSelectionTracking,
@@ -26,6 +36,7 @@ export function registerContentRuntime(): void {
       }
 
       if (message.type === 'phase0.renderOverlay') {
+        syncSelectionBatch(message.payload.sessionItems);
         renderOverlay(message.payload);
       }
 
@@ -36,6 +47,11 @@ export function registerContentRuntime(): void {
 
       if (message.type === 'phase1.invokeOverlayAction') {
         void handleInvokeOverlayAction(message, sendResponse);
+        return true;
+      }
+
+      if (message.type === 'phase2.beginRectangleSelection') {
+        void handleBeginRectangleSelection(message, sendResponse);
         return true;
       }
 
@@ -58,12 +74,19 @@ async function handleSeedOverlaySession(
     return;
   }
 
+  const item: SelectionSessionItem = {
+    id: `selection-${Date.now()}`,
+    source: 'text-selection',
+    selection: selection.payload,
+    includeImage: true,
+    previewImageUrl: message.payload.previewImageUrl,
+    cropDurationMs: message.payload.cropDurationMs,
+  };
+
   const runtimeMessage: CacheOverlaySessionMessage = {
     type: 'phase1.cacheOverlaySession',
     payload: {
-      selection: selection.payload,
-      previewImageUrl: message.payload.previewImageUrl,
-      cropDurationMs: message.payload.cropDurationMs,
+      item,
       modelOptions: message.payload.modelOptions ?? [],
     },
   };
@@ -88,4 +111,40 @@ async function handleInvokeOverlayAction(
     payload: message.payload,
   })) as RunOverlayActionResponse | undefined;
   sendResponse(response ?? { ok: true });
+}
+
+async function handleBeginRectangleSelection(
+  message: Extract<ContentScriptMessage, { type: 'phase2.beginRectangleSelection' }>,
+  sendResponse: (response: BeginRectangleSelectionResponse) => void
+): Promise<void> {
+  const result = await startRectangleSelection(message.payload.triggerSource);
+  if (!result.ok || !result.payload) {
+    sendResponse({
+      ok: false,
+      error: result.error ?? 'Rectangle selection was not completed.',
+    });
+    return;
+  }
+
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase2.appendSessionItem',
+    payload: {
+      selection: result.payload,
+      source: 'free-rectangle',
+    },
+  })) as AppendSessionItemResponse | undefined;
+
+  if (response?.ok === false) {
+    sendResponse({
+      ok: false,
+      error: response.error ?? 'Failed to cache rectangle selection.',
+    });
+    return;
+  }
+
+  sendResponse({ ok: true });
+}
+
+export function clearContentSelectionBatch(): void {
+  clearSelectionBatch();
 }

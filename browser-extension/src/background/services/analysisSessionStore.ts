@@ -1,13 +1,11 @@
 import type {
   AnalysisAction,
   ModelOption,
-  SelectionCapturePayload,
+  SelectionSessionItem,
 } from '../../shared/contracts/messages';
 
 export interface SelectionAnalysisSession {
-  selection: SelectionCapturePayload;
-  previewImageUrl: string;
-  cropDurationMs: number;
+  items: SelectionSessionItem[];
   modelOptions: ModelOption[];
   lastAction: AnalysisAction;
   lastModelName?: string;
@@ -32,4 +30,10 @@ export function setAnalysisSession(
 
 export function clearAnalysisSession(tabId: number): void {
   sessionStore.delete(tabId);
+}
+
+export function getLatestSelectionItem(
+  session: SelectionAnalysisSession
+): SelectionSessionItem | undefined {
+  return session.items.at(-1);
 }

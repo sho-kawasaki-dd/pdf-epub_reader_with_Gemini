@@ -1,21 +1,42 @@
+import { MAX_SELECTION_SESSION_ITEMS } from '../../shared/config/phase0';
 import type {
   AnalysisAction,
+  AppendSessionItemResponse,
+  BeginRectangleSelectionResponse,
+  ClearOverlaySessionMessage,
   OverlayPayload,
+  RemoveSessionItemResponse,
   RunOverlayActionMessage,
   RunOverlayActionResponse,
+  SelectionSessionItem,
 } from '../../shared/contracts/messages';
+import {
+  startRectangleSelection,
+} from '../selection/rectangleSelectionController';
+import {
+  canAppendSelectionBatchItem,
+  clearSelectionBatch,
+  getSelectionBatchCapacity,
+  getSelectionBatchSnapshot,
+  syncSelectionBatch,
+} from '../selection/selectionBatchController';
+import { collectSelection } from '../selection/snapshotStore';
 
 const OVERLAY_HOST_ID = 'gem-read-phase0-overlay-host';
 // minimize 状態と draft 入力は再描画を跨いで維持したいので module state に置く。
 let isOverlayMinimized = false;
 let draftModelName = '';
 let draftCustomPrompt = '';
+let isRectangleModeActive = false;
 
 /**
  * Overlay は content script 側で一元管理し、payload から都度 DOM を再構築する。
  * こうしておくと background から渡る状態だけで表示を復元でき、ページ本体の DOM 状態に依存しにくい。
  */
 export function renderOverlay(payload: OverlayPayload): void {
+  const sessionItems = syncSelectionBatch(payload.sessionItems);
+  const maxSessionItems = payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS;
+
   if (payload.modelName !== undefined) {
     draftModelName = payload.modelName;
   }
@@ -26,7 +47,7 @@ export function renderOverlay(payload: OverlayPayload): void {
   const root = ensureOverlayRoot();
   root.innerHTML = isOverlayMinimized
     ? renderLauncherMarkup(payload)
-    : renderPanelMarkup(payload);
+    : renderPanelMarkup(payload, sessionItems, maxSessionItems);
 
   if (isOverlayMinimized) {
     const launcherButton =
@@ -37,7 +58,9 @@ export function renderOverlay(payload: OverlayPayload): void {
       isOverlayMinimized = false;
       renderOverlay(payload);
     });
-    closeButton?.addEventListener('click', disposeOverlay);
+    closeButton?.addEventListener('click', () => {
+      void closeOverlay();
+    });
     return;
   }
 
@@ -64,6 +87,13 @@ export function renderOverlay(payload: OverlayPayload): void {
     '.custom-prompt-input'
   );
   const customButton = root.querySelector<HTMLButtonElement>('.action-custom');
+  const addSelectionButton = root.querySelector<HTMLButtonElement>(
+    '.action-add-selection'
+  );
+  const addRectangleButton = root.querySelector<HTMLButtonElement>(
+    '.action-add-rectangle'
+  );
+  const batchHint = root.querySelector<HTMLElement>('.batch-hint');
   const translationButton = root.querySelector<HTMLButtonElement>(
     '.action-translation'
   );
@@ -94,6 +124,9 @@ export function renderOverlay(payload: OverlayPayload): void {
     !modelDatalist ||
     !customPromptInput ||
     !customButton ||
+    !addSelectionButton ||
+    !addRectangleButton ||
+    !batchHint ||
     !translationButton ||
     !explanationButton ||
     !actionHint ||
@@ -103,12 +136,15 @@ export function renderOverlay(payload: OverlayPayload): void {
     return;
   }
 
-  selectionBox.textContent =
-    payload.selectedText || 'No selection text captured.';
+  const latestSessionItem = sessionItems.at(-1);
+  const selectionText = payload.selectedText || buildSelectionText(sessionItems);
+  const previewImageUrl = payload.previewImageUrl ?? latestSessionItem?.previewImageUrl;
 
-  previewSection.hidden = !payload.previewImageUrl;
-  if (payload.previewImageUrl) {
-    previewImage.src = payload.previewImageUrl;
+  selectionBox.textContent = selectionText || 'No selection text captured.';
+
+  previewSection.hidden = !previewImageUrl;
+  if (previewImageUrl) {
+    previewImage.src = previewImageUrl;
   }
 
   resultSection.hidden = !payload.translatedText;
@@ -143,6 +179,11 @@ export function renderOverlay(payload: OverlayPayload): void {
   explanationButton.disabled = !actionsEnabled;
   customButton.disabled =
     !actionsEnabled || customPromptInput.value.trim().length === 0;
+  addSelectionButton.disabled =
+    payload.status === 'loading' || !canAppendSelectionBatchItem() || isRectangleModeActive;
+  addRectangleButton.disabled =
+    payload.status === 'loading' || !canAppendSelectionBatchItem() || isRectangleModeActive;
+  batchHint.textContent = buildBatchHint(maxSessionItems, isRectangleModeActive);
   actionHint.textContent = actionsEnabled
     ? 'Reuse the captured selection with a different action or model.'
     : 'Select text and run Gem Read once before action buttons become available.';
@@ -187,15 +228,39 @@ export function renderOverlay(payload: OverlayPayload): void {
       errorSection
     );
   });
+  addSelectionButton.addEventListener('click', () => {
+    void addCurrentSelection(errorBox, errorSection, payload);
+  });
+  addRectangleButton.addEventListener('click', () => {
+    void addRectangleSelection(errorBox, errorSection, payload);
+  });
+  for (const removeButton of root.querySelectorAll<HTMLButtonElement>(
+    '.session-item-remove'
+  )) {
+    removeButton.addEventListener('click', () => {
+      const itemId = removeButton.dataset.itemId;
+      if (!itemId) {
+        return;
+      }
+
+      void removeSelectionItem(itemId, errorBox, errorSection);
+    });
+  }
 
   minimizeButton.addEventListener('click', () => {
     isOverlayMinimized = true;
     renderOverlay(payload);
   });
-  closeButton.addEventListener('click', disposeOverlay);
+  closeButton.addEventListener('click', () => {
+    void closeOverlay();
+  });
 }
 
-function renderPanelMarkup(payload: OverlayPayload): string {
+function renderPanelMarkup(
+  payload: OverlayPayload,
+  sessionItems: SelectionSessionItem[],
+  maxSessionItems: number
+): string {
   return `
     <style>
       :host {
@@ -320,6 +385,9 @@ function renderPanelMarkup(payload: OverlayPayload): string {
       .action-row--single {
         grid-template-columns: 1fr;
       }
+      .batch-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       .input,
       .textarea,
       .action-button {
@@ -364,6 +432,57 @@ function renderPanelMarkup(payload: OverlayPayload): string {
         color: #cbd5e1;
         font-size: 12px;
       }
+      .batch-counter {
+        color: #cbd5e1;
+        font-size: 11px;
+      }
+      .batch-list {
+        display: grid;
+        gap: 8px;
+      }
+      .session-item {
+        display: grid;
+        gap: 6px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+      }
+      .session-item-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .session-item-kind {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        color: #fde68a;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .session-item-text {
+        color: #f8fafc;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .session-item-remove {
+        border: 0;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(239, 68, 68, 0.18);
+        color: #fecaca;
+        cursor: pointer;
+        font: inherit;
+      }
+      .batch-hint {
+        color: #cbd5e1;
+        font-size: 12px;
+      }
     </style>
     <div class="panel">
       <div class="header">
@@ -380,6 +499,18 @@ function renderPanelMarkup(payload: OverlayPayload): string {
       <div class="section banner-section" hidden>
         <div class="label">Runtime</div>
         <div class="banner-box"></div>
+      </div>
+      <div class="section">
+        <div class="label">Batch</div>
+        <div class="action-grid">
+          <div class="batch-counter">${sessionItems.length}/${maxSessionItems} items</div>
+          <div class="action-row batch-actions">
+            <button class="action-button action-button--secondary action-add-selection" type="button">Add Current Selection</button>
+            <button class="action-button action-button--secondary action-add-rectangle" type="button">Add Rectangle</button>
+          </div>
+          <div class="batch-hint"></div>
+          <div class="batch-list">${renderSessionItemsMarkup(sessionItems)}</div>
+        </div>
       </div>
       <div class="section">
         <div class="label">Actions</div>
@@ -539,6 +670,162 @@ function buildBannerText(payload: OverlayPayload): string {
   return '';
 }
 
+function buildSelectionText(sessionItems: SelectionSessionItem[]): string {
+  const latestItem = sessionItems.at(-1);
+  if (!latestItem) {
+    return '';
+  }
+
+  return latestItem.selection.text || '[Image region only]';
+}
+
+function buildBatchHint(maxSessionItems: number, rectangleActive: boolean): string {
+  const { current } = getSelectionBatchCapacity();
+  if (rectangleActive) {
+    return 'Rectangle selection is active. Drag on the page to capture a region or press Esc to cancel.';
+  }
+  if (current >= maxSessionItems) {
+    return `The batch is full. Remove an item before adding another one.`;
+  }
+  if (current === 0) {
+    return 'Add the current text selection or capture an image region to start a reusable batch.';
+  }
+  return 'Batch items keep their own cached crop preview so later analysis does not depend on live page selection.';
+}
+
+function renderSessionItemsMarkup(sessionItems: SelectionSessionItem[]): string {
+  if (sessionItems.length === 0) {
+    return '<div class="session-item"><div class="session-item-text">No items in the current batch.</div></div>';
+  }
+
+  return sessionItems
+    .map((item, index) => {
+      const itemText = item.selection.text || '[Image region only]';
+      const itemKind = item.source === 'free-rectangle' ? 'Rectangle' : 'Selection';
+      return `
+        <div class="session-item">
+          <div class="session-item-header">
+            <div class="session-item-kind">${index + 1}. ${itemKind}</div>
+            <button class="session-item-remove" type="button" data-item-id="${escapeHtml(item.id)}">Remove</button>
+          </div>
+          <div class="session-item-text">${escapeHtml(itemText)}</div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+async function addCurrentSelection(
+  errorBox: HTMLElement,
+  errorSection: HTMLElement,
+  payload: OverlayPayload
+): Promise<void> {
+  if (!canAppendSelectionBatchItem()) {
+    errorBox.textContent = `You can keep up to ${payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS} selections in one batch.`;
+    errorSection.hidden = false;
+    return;
+  }
+
+  const selection = collectSelection();
+  if (!selection.ok || !selection.payload) {
+    errorBox.textContent =
+      selection.error ?? 'A page selection is required before adding it to the batch.';
+    errorSection.hidden = false;
+    return;
+  }
+
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase2.appendSessionItem',
+    payload: {
+      selection: selection.payload,
+      source: 'text-selection',
+    },
+  })) as AppendSessionItemResponse | undefined;
+
+  if (response?.ok === false) {
+    errorBox.textContent = response.error ?? 'Failed to add the current selection.';
+    errorSection.hidden = false;
+    return;
+  }
+
+  errorBox.textContent = '';
+  errorSection.hidden = true;
+}
+
+async function addRectangleSelection(
+  errorBox: HTMLElement,
+  errorSection: HTMLElement,
+  payload: OverlayPayload
+): Promise<void> {
+  if (!canAppendSelectionBatchItem()) {
+    errorBox.textContent = `You can keep up to ${payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS} selections in one batch.`;
+    errorSection.hidden = false;
+    return;
+  }
+
+  isRectangleModeActive = true;
+  renderOverlay({
+    ...payload,
+    sessionItems: getSelectionBatchSnapshot(),
+  });
+
+  const selection = await startRectangleSelection('overlay');
+  isRectangleModeActive = false;
+
+  if (!selection.ok || !selection.payload) {
+    if (selection.error && selection.error !== 'Rectangle selection was cancelled.') {
+      errorBox.textContent = selection.error;
+      errorSection.hidden = false;
+    }
+    renderOverlay({
+      ...payload,
+      sessionItems: getSelectionBatchSnapshot(),
+    });
+    return;
+  }
+
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase2.appendSessionItem',
+    payload: {
+      selection: selection.payload,
+      source: 'free-rectangle',
+    },
+  })) as AppendSessionItemResponse | BeginRectangleSelectionResponse | undefined;
+
+  if (response?.ok === false) {
+    errorBox.textContent = response.error ?? 'Failed to add the rectangle selection.';
+    errorSection.hidden = false;
+    renderOverlay({
+      ...payload,
+      sessionItems: getSelectionBatchSnapshot(),
+    });
+    return;
+  }
+
+  errorBox.textContent = '';
+  errorSection.hidden = true;
+}
+
+async function removeSelectionItem(
+  itemId: string,
+  errorBox: HTMLElement,
+  errorSection: HTMLElement
+): Promise<void> {
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase2.removeSessionItem',
+    payload: { itemId },
+  })) as RemoveSessionItemResponse | undefined;
+
+  if (response?.ok === false) {
+    errorBox.textContent = response.error ?? 'Failed to remove the selection item.';
+    errorSection.hidden = false;
+    return;
+  }
+
+  errorBox.textContent = '';
+  errorSection.hidden = true;
+}
+
 async function runOverlayAction(
   action: AnalysisAction,
   modelName: string,
@@ -580,6 +867,22 @@ function disposeOverlay(): void {
   const host = document.getElementById(OVERLAY_HOST_ID);
   host?.remove();
   isOverlayMinimized = false;
+  isRectangleModeActive = false;
+  clearSelectionBatch();
+}
+
+async function closeOverlay(): Promise<void> {
+  const message: ClearOverlaySessionMessage = {
+    type: 'phase2.clearOverlaySession',
+  };
+
+  disposeOverlay();
+
+  try {
+    await chrome.runtime.sendMessage(message);
+  } catch {
+    // close 自体は background 応答に依存させず、UI 側は先に閉じる。
+  }
 }
 
 function escapeHtml(value: string): string {

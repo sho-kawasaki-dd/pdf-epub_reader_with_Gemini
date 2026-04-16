@@ -1,4 +1,7 @@
-import type { ExtensionSettings } from '../../shared/config/phase0';
+import {
+  MAX_SELECTION_SESSION_ITEMS,
+  type ExtensionSettings,
+} from '../../shared/config/phase0';
 import type {
   AnalysisAction,
   AnalyzeRequestOptions,
@@ -13,6 +16,7 @@ import {
 } from '../gateways/tabMessagingGateway';
 import {
   getAnalysisSession,
+  getLatestSelectionItem,
   setAnalysisSession,
   type SelectionAnalysisSession,
 } from '../services/analysisSessionStore';
@@ -57,6 +61,8 @@ export async function runSelectionAnalysis(
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
+      sessionItems: cachedSession?.items,
+      maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: Boolean(cachedSession),
       selectedText: fallbackSelectionText,
@@ -71,10 +77,11 @@ export async function runSelectionAnalysis(
         fallbackSelectionText,
         modelOptions
       ));
+    const sessionItem = getRequiredSessionItem(session);
 
     const apiResponse = await sendAnalyzeTranslateRequest(
-      session.selection,
-      session.previewImageUrl,
+      sessionItem.selection,
+      sessionItem.previewImageUrl ?? '',
       resolvedRequestOptions
     );
 
@@ -91,17 +98,19 @@ export async function runSelectionAnalysis(
       action: apiResponse.mode,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
+      sessionItems: session.items,
+      maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: true,
-      selectedText: session.selection.text,
+      selectedText: sessionItem.selection.text,
       translatedText: apiResponse.translated_text,
       explanation: apiResponse.explanation,
-      previewImageUrl: session.previewImageUrl,
+      previewImageUrl: sessionItem.previewImageUrl,
       usedMock: apiResponse.used_mock,
       availability: apiResponse.availability,
       degradedReason: apiResponse.degraded_reason ?? undefined,
       imageCount: apiResponse.image_count,
-      timingMs: session.cropDurationMs,
+      timingMs: sessionItem.cropDurationMs,
       rawResponse: apiResponse.raw_response,
     });
   } catch (error) {
@@ -112,6 +121,8 @@ export async function runSelectionAnalysis(
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
+      sessionItems: cachedSession?.items ?? getCachedSession(tabId)?.items,
+      maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: Boolean(cachedSession || getCachedSession(tabId)),
       selectedText: fallbackSelectionText,
@@ -147,9 +158,16 @@ async function createFreshSession(
   );
 
   const session: SelectionAnalysisSession = {
-    selection: resolvedSelection,
-    previewImageUrl: cropResult.imageDataUrl,
-    cropDurationMs: cropResult.durationMs,
+    items: [
+      {
+        id: createSessionItemId(),
+        source: 'text-selection',
+        selection: resolvedSelection,
+        includeImage: false,
+        previewImageUrl: cropResult.imageDataUrl,
+        cropDurationMs: cropResult.durationMs,
+      },
+    ],
     modelOptions,
     lastAction: 'translation',
   };
@@ -165,9 +183,22 @@ function getCachedSession(tabId: number): SelectionAnalysisSession | undefined {
 
   return {
     ...session,
+    items: session.items.map((item) => ({ ...item })),
     // 呼び出し側が候補配列を書き換えても store 本体を汚染しないよう参照を切る。
     modelOptions: [...session.modelOptions],
   };
+}
+
+function getRequiredSessionItem(session: SelectionAnalysisSession) {
+  const item = getLatestSelectionItem(session);
+  if (!item) {
+    throw new Error('解析セッションが見つかりません。選択し直してから再実行してください。');
+  }
+  return item;
+}
+
+function createSessionItemId(): string {
+  return `selection-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function buildModelOptions(settings: ExtensionSettings): ModelOption[] {

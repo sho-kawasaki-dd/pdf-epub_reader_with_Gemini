@@ -1,9 +1,24 @@
 import { ensurePhase0ContextMenu } from './menus/phase0ContextMenu';
-import { setAnalysisSession } from './services/analysisSessionStore';
+import {
+  clearAnalysisSession,
+  setAnalysisSession,
+} from './services/analysisSessionStore';
 import { runSelectionAnalysis } from './usecases/runSelectionAnalysis';
-import { PHASE0_MENU_ID } from '../shared/config/phase0';
+import {
+  appendSelectionSessionItem,
+  removeSelectionSessionItem,
+} from './usecases/updateSelectionSession';
+import {
+  PHASE0_MENU_ID,
+  PHASE2_RECTANGLE_COMMAND_ID,
+  PHASE2_RECTANGLE_MENU_ID,
+} from '../shared/config/phase0';
 import type {
+  AppendSessionItemResponse,
+  BeginRectangleSelectionResponse,
   BackgroundRuntimeMessage,
+  CacheOverlaySessionMessage,
+  RemoveSessionItemResponse,
   RunOverlayActionResponse,
 } from '../shared/contracts/messages';
 
@@ -23,13 +38,28 @@ export function registerBackgroundRuntime(): void {
   });
 
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId !== PHASE0_MENU_ID || !tab?.id) {
+    if (!tab?.id) {
       return;
     }
 
-    void runSelectionAnalysis(tab, info.selectionText ?? '', {
-      action: 'translation',
-    });
+    if (info.menuItemId === PHASE0_MENU_ID) {
+      void runSelectionAnalysis(tab, info.selectionText ?? '', {
+        action: 'translation',
+      });
+      return;
+    }
+
+    if (info.menuItemId === PHASE2_RECTANGLE_MENU_ID) {
+      void handleRectangleSelectionStart(tab, 'context-menu');
+    }
+  });
+
+  chrome.commands?.onCommand.addListener((command, tab) => {
+    if (command !== PHASE2_RECTANGLE_COMMAND_ID || !tab?.id) {
+      return;
+    }
+
+    void handleRectangleSelectionStart(tab, 'command');
   });
 
   chrome.runtime.onMessage.addListener(
@@ -39,15 +69,31 @@ export function registerBackgroundRuntime(): void {
         sender.tab?.id !== undefined
       ) {
         // Overlay 上の再実行は再選択を要求しないため、直前の selection/crop 結果を tab 単位で保持する。
-        setAnalysisSession(sender.tab.id, {
-          selection: message.payload.selection,
-          previewImageUrl: message.payload.previewImageUrl,
-          cropDurationMs: message.payload.cropDurationMs,
-          modelOptions: message.payload.modelOptions,
-          lastAction: 'translation',
-        });
+        cacheOverlaySession(sender.tab.id, message);
         sendResponse({ ok: true });
         return false;
+      }
+
+      if (
+        message.type === 'phase2.clearOverlaySession' &&
+        sender.tab?.id !== undefined
+      ) {
+        clearAnalysisSession(sender.tab.id);
+        sendResponse({ ok: true });
+        return false;
+      }
+
+      if (message.type === 'phase2.appendSessionItem' && sender.tab) {
+        void handleAppendSessionItem(message, sender.tab, sendResponse);
+        return true;
+      }
+
+      if (
+        message.type === 'phase2.removeSessionItem' &&
+        sender.tab?.id !== undefined
+      ) {
+        void handleRemoveSessionItem(message, sender.tab.id, sendResponse);
+        return true;
       }
 
       if (message.type !== 'phase1.runOverlayAction' || !sender.tab) {
@@ -60,8 +106,62 @@ export function registerBackgroundRuntime(): void {
   );
 }
 
+function cacheOverlaySession(
+  tabId: number,
+  message: CacheOverlaySessionMessage
+): void {
+  setAnalysisSession(tabId, {
+    items: [message.payload.item],
+    modelOptions: message.payload.modelOptions,
+    lastAction: 'translation',
+  });
+}
+
+async function handleRectangleSelectionStart(
+  tab: chrome.tabs.Tab,
+  triggerSource: 'context-menu' | 'command'
+): Promise<void> {
+  if (tab.id === undefined) {
+    return;
+  }
+
+  try {
+    const response = (await chrome.tabs.sendMessage(tab.id, {
+      type: 'phase2.beginRectangleSelection',
+      payload: { triggerSource },
+    })) as BeginRectangleSelectionResponse | undefined;
+
+    if (response?.ok !== false) {
+      return;
+    }
+
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'phase0.renderOverlay',
+      payload: {
+        status: 'error',
+        selectedText: '',
+        error:
+          response.error ??
+          'Rectangle selection could not be started on this page.',
+      },
+    });
+  } catch (error) {
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'phase0.renderOverlay',
+      payload: {
+        status: 'error',
+        selectedText: '',
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Rectangle selection could not be started on this page.',
+      },
+    });
+  }
+}
+
 async function handleOverlayAction(
-  message: BackgroundRuntimeMessage,
+  message: Extract<BackgroundRuntimeMessage, { type: 'phase1.runOverlayAction' }>,
   tab: chrome.tabs.Tab,
   sendResponse: (response: RunOverlayActionResponse) => void
 ): Promise<void> {
@@ -78,6 +178,42 @@ async function handleOverlayAction(
     sendResponse({
       ok: false,
       error: error instanceof Error ? error.message : 'Overlay action failed.',
+    });
+  }
+}
+
+async function handleAppendSessionItem(
+  message: Extract<BackgroundRuntimeMessage, { type: 'phase2.appendSessionItem' }>,
+  tab: chrome.tabs.Tab,
+  sendResponse: (response: AppendSessionItemResponse) => void
+): Promise<void> {
+  try {
+    const item = await appendSelectionSessionItem(
+      tab,
+      message.payload.selection,
+      message.payload.source
+    );
+    sendResponse({ ok: true, item });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to append selection item.',
+    });
+  }
+}
+
+async function handleRemoveSessionItem(
+  message: Extract<BackgroundRuntimeMessage, { type: 'phase2.removeSessionItem' }>,
+  tabId: number,
+  sendResponse: (response: RemoveSessionItemResponse) => void
+): Promise<void> {
+  try {
+    await removeSelectionSessionItem(tabId, message.payload.itemId);
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to remove selection item.',
     });
   }
 }

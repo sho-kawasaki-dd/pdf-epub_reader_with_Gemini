@@ -25,6 +25,9 @@ export function createChromeMock(): typeof chrome {
       onStartup: createEventHook(),
       sendMessage: vi.fn(),
     },
+    commands: {
+      onCommand: createEventHook(),
+    },
     contextMenus: {
       create: vi.fn(),
       removeAll: vi.fn(),

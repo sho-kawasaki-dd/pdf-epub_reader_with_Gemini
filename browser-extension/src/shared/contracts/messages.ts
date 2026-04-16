@@ -64,9 +64,24 @@ export interface AnalyzeRequestOptions {
   customPrompt?: string;
 }
 
+export type SelectionSessionSource = 'text-selection' | 'free-rectangle';
+export type RectangleSelectionTriggerSource =
+  | 'overlay'
+  | 'context-menu'
+  | 'command';
+
 export interface ModelOption {
   modelId: string;
   displayName: string;
+}
+
+export interface SelectionSessionItem {
+  id: string;
+  source: SelectionSessionSource;
+  selection: SelectionCapturePayload;
+  includeImage: boolean;
+  previewImageUrl?: string;
+  cropDurationMs?: number;
 }
 
 export interface ModelListApiResponse {
@@ -93,6 +108,8 @@ export interface OverlayPayload {
   action?: AnalysisAction;
   modelName?: string;
   modelOptions?: ModelOption[];
+  sessionItems?: SelectionSessionItem[];
+  maxSessionItems?: number;
   customPrompt?: string;
   sessionReady?: boolean;
   selectedText?: string;
@@ -163,19 +180,67 @@ export interface RunOverlayActionResponse {
 export interface CacheOverlaySessionMessage {
   type: 'phase1.cacheOverlaySession';
   payload: {
-    selection: SelectionCapturePayload;
-    previewImageUrl: string;
-    cropDurationMs: number;
+    item: SelectionSessionItem;
     modelOptions: ModelOption[];
   };
+}
+
+export interface BeginRectangleSelectionMessage {
+  type: 'phase2.beginRectangleSelection';
+  payload: {
+    triggerSource: RectangleSelectionTriggerSource;
+  };
+}
+
+export interface BeginRectangleSelectionResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface AppendSessionItemMessage {
+  type: 'phase2.appendSessionItem';
+  payload: {
+    selection: SelectionCapturePayload;
+    source: SelectionSessionSource;
+  };
+}
+
+export interface AppendSessionItemResponse {
+  ok: boolean;
+  item?: SelectionSessionItem;
+  error?: string;
+}
+
+export interface RemoveSessionItemMessage {
+  type: 'phase2.removeSessionItem';
+  payload: {
+    itemId: string;
+  };
+}
+
+export interface RemoveSessionItemResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface ClearOverlaySessionMessage {
+  type: 'phase2.clearOverlaySession';
+}
+
+export interface ClearOverlaySessionResponse {
+  ok: boolean;
 }
 
 export type ContentScriptMessage =
   | CollectSelectionMessage
   | RenderOverlayMessage
   | SeedOverlaySessionMessage
-  | InvokeOverlayActionMessage;
+  | InvokeOverlayActionMessage
+  | BeginRectangleSelectionMessage;
 
 export type BackgroundRuntimeMessage =
   | RunOverlayActionMessage
-  | CacheOverlaySessionMessage;
+  | CacheOverlaySessionMessage
+  | AppendSessionItemMessage
+  | RemoveSessionItemMessage
+  | ClearOverlaySessionMessage;

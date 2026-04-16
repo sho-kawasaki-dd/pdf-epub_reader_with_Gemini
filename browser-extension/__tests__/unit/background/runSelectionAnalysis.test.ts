@@ -80,20 +80,24 @@ describe('runSelectionAnalysis', () => {
     );
 
     expect(loadExtensionSettingsMock).toHaveBeenCalledTimes(1);
-    expect(renderOverlayMock).toHaveBeenNthCalledWith(1, 7, {
-      status: 'loading',
-      action: 'translation',
-      modelName: 'gemini-2.5-flash',
-      modelOptions: [
-        {
-          modelId: 'gemini-2.5-flash',
-          displayName: 'gemini-2.5-flash',
-        },
-      ],
-      customPrompt: undefined,
-      sessionReady: false,
-      selectedText: '  fallback text  ',
-    });
+    expect(renderOverlayMock).toHaveBeenNthCalledWith(
+      1,
+      7,
+      expect.objectContaining({
+        status: 'loading',
+        action: 'translation',
+        modelName: 'gemini-2.5-flash',
+        modelOptions: [
+          {
+            modelId: 'gemini-2.5-flash',
+            displayName: 'gemini-2.5-flash',
+          },
+        ],
+        customPrompt: undefined,
+        sessionReady: false,
+        selectedText: '  fallback text  ',
+      })
+    );
     expect(collectSelectionMock).toHaveBeenCalledWith(7, '  fallback text  ');
     expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledWith(9, {
       format: 'png',
@@ -225,21 +229,24 @@ describe('runSelectionAnalysis', () => {
     );
 
     expect(chromeMock.tabs.captureVisibleTab).not.toHaveBeenCalled();
-    expect(renderOverlayMock).toHaveBeenLastCalledWith(7, {
-      status: 'error',
-      action: 'translation_with_explanation',
-      modelName: 'gemini-2.5-flash',
-      modelOptions: [
-        {
-          modelId: 'gemini-2.5-flash',
-          displayName: 'gemini-2.5-flash',
-        },
-      ],
-      customPrompt: undefined,
-      sessionReady: false,
-      selectedText: 'fallback',
-      error: '選択テキストを取得できませんでした。',
-    });
+    expect(renderOverlayMock).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        status: 'error',
+        action: 'translation_with_explanation',
+        modelName: 'gemini-2.5-flash',
+        modelOptions: [
+          {
+            modelId: 'gemini-2.5-flash',
+            displayName: 'gemini-2.5-flash',
+          },
+        ],
+        customPrompt: undefined,
+        sessionReady: false,
+        selectedText: 'fallback',
+        error: '選択テキストを取得できませんでした。',
+      })
+    );
   });
 
   it('reuses the cached session for overlay-triggered reruns', async () => {
