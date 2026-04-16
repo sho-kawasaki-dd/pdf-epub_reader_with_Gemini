@@ -175,6 +175,96 @@ src/browser_api/
 - 自由矩形選択は `browser-extension/src/content/` 配下の独立 feature として実装し、Background には矩形座標と capture 実行要求のみを渡す。
 - FastAPI の router から `AIModel` を直接呼び出さず、必ず `application/` と `adapters/` を経由させる。
 
+## テスト計画
+
+### テスト方針
+
+- browser-extension は **Vitest + jsdom** を単体テスト基盤とし、Playwright を Chromium 向け E2E の基盤とする。
+- `src/browser_api/` は既存の **pytest + pytest-asyncio** 基盤に統合し、application/service と FastAPI router を主対象とする。
+- 主対象 OS は Windows とするが、Python テストは将来的な cross-platform 実行を阻害しない書き方を維持する。
+- CI gate は browser-extension unit、browser-extension smoke E2E、browser_api pytest を分離して実行できる形にする。
+- 実 Gemini API を叩くテストは通常 CI には含めず、手動 smoke または別ジョブ扱いとする。
+
+### browser-extension のテストスイート
+
+#### Unit Test
+
+- テスト対象は `runtime entry` ではなく、`usecases` / `gateways` / `services` / `overlay` / `selection` を優先する。
+- 最初の優先対象は次の通りとする。
+    - `background/usecases/runPhase0TranslationTest.ts`
+    - `background/services/cropSelectionImage.ts`
+    - `content/selection/snapshotStore.ts`
+    - `content/overlay/renderOverlay.ts`
+- Chrome API mock と DOM setup は共有 fixture に集約し、テストごとに ad hoc な mock を増やさない。
+- `background.ts` / `content.ts` / `popup.ts` は thin entry として維持し、原則直接テストしない。
+
+#### E2E Test
+
+- E2E は Playwright を Chromium only で導入する。
+- 最初の smoke シナリオは「テキスト選択 → context menu 起動導線 → overlay 表示または想定エラー表示」とする。
+- unpacked extension 読み込み前提で実行し、必要に応じて local API 応答を stub できる test mode を検討する。
+- 自由矩形機能追加後は `content/rect-selection/` 系の専用 E2E を追加する。
+
+### src/browser_api のテストスイート
+
+#### Application / Service Test
+
+- 最優先の単体テスト対象は `application/services/analyze_service.py` とする。
+- 検証項目は次を含む。
+    - model 名解決
+    - Base64 画像 decode
+    - `AIKeyMissingError` 時の mock fallback
+    - `translation` / `translation_with_explanation` の応答整形
+- `AIModel` 実通信は行わず、gateway を差し替えて安定実行できるようにする。
+
+#### Router / API Test
+
+- FastAPI router は `TestClient` ベースで `/health` と `/analyze/translate` を検証する。
+- 主な確認項目は次の通りとする。
+    - 正常系レスポンス
+    - model 未設定時の 400
+    - AI error の HTTP mapping
+    - app state / dependency override による依存差し替え
+
+### 推奨テスト配置
+
+```text
+tests/
+    test_browser_api/
+        conftest.py
+        test_application/
+            test_analyze_service.py
+        test_api/
+            test_health.py
+            test_analyze_router.py
+
+browser-extension/
+    __tests__/
+        setup.ts
+        mocks/
+        unit/
+            background/
+            content/
+            popup/
+        e2e/
+```
+
+### 実行方針
+
+- Python の専用テストは `uv run pytest tests/test_browser_api/ -q` を基準コマンドとする。
+- browser-extension の unit test は `npm run test`、coverage は `npm run test:coverage` を基準コマンドとする。
+- browser-extension の E2E は Playwright smoke を別コマンドで実行可能にし、unit test と分離する。
+- 既存回帰確認として `npm run build` と `uv run pytest tests/ -q` を維持する。
+
+### Coverage / CI 運用
+
+- Coverage は初回導入時に hard gate にせず、まずレポート出力を整えて現状値を観測する。
+- しきい値は導入後の実測値を見て段階的に設定する。
+- CI では少なくとも次の 3 系統を独立ジョブ化できる構成を目指す。
+    - browser_api pytest subset
+    - browser-extension Vitest
+    - browser-extension Playwright smoke
+
 ## システム構成案
 
 ```mermaid
