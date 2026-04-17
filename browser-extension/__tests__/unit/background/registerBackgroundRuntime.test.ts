@@ -6,6 +6,7 @@ const ensurePhase0ContextMenuMock = vi.hoisted(() => vi.fn());
 const runSelectionAnalysisMock = vi.hoisted(() => vi.fn());
 const appendSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const removeSelectionSessionItemMock = vi.hoisted(() => vi.fn());
+const toggleSelectionSessionItemImageMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/background/menus/phase0ContextMenu', () => ({
   ensurePhase0ContextMenu: ensurePhase0ContextMenuMock,
@@ -18,6 +19,7 @@ vi.mock('../../../src/background/usecases/runSelectionAnalysis', () => ({
 vi.mock('../../../src/background/usecases/updateSelectionSession', () => ({
   appendSelectionSessionItem: appendSelectionSessionItemMock,
   removeSelectionSessionItem: removeSelectionSessionItemMock,
+  toggleSelectionSessionItemImage: toggleSelectionSessionItemImageMock,
 }));
 
 import { registerBackgroundRuntime } from '../../../src/background/entry';
@@ -273,6 +275,34 @@ describe('registerBackgroundRuntime', () => {
     expect(removeSelectionSessionItemMock).toHaveBeenCalledWith(
       7,
       'selection-2'
+    );
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('delegates session item image toggles to the updateSelectionSession usecase', async () => {
+    toggleSelectionSessionItemImageMock.mockResolvedValue(undefined);
+    registerBackgroundRuntime();
+
+    const handler = getRuntimeMessageHandler();
+    const sendResponse = vi.fn();
+    const keepChannelOpen = handler(
+      {
+        type: 'phase2.toggleSessionItemImage',
+        payload: {
+          itemId: 'selection-2',
+          includeImage: true,
+        },
+      },
+      { tab: { id: 7 } },
+      sendResponse
+    );
+
+    expect(keepChannelOpen).toBe(true);
+    await Promise.resolve();
+    expect(toggleSelectionSessionItemImageMock).toHaveBeenCalledWith(
+      7,
+      'selection-2',
+      true
     );
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
   });

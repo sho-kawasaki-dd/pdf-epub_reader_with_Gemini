@@ -1,10 +1,12 @@
 import type {
   AppendSessionItemResponse,
   BeginRectangleSelectionResponse,
+  CacheBatchOverlaySessionMessage,
   CacheOverlaySessionMessage,
   ContentScriptMessage,
   RunOverlayActionResponse,
   SelectionSessionItem,
+  SeedBatchOverlaySessionResponse,
   SeedOverlaySessionResponse,
 } from '../shared/contracts/messages';
 import { renderOverlay } from './overlay/renderOverlay';
@@ -47,6 +49,11 @@ export function registerContentRuntime(): void {
 
       if (message.type === 'phase1.invokeOverlayAction') {
         void handleInvokeOverlayAction(message, sendResponse);
+        return true;
+      }
+
+      if (message.type === 'phase2.seedBatchOverlaySession') {
+        void handleSeedBatchOverlaySession(message, sendResponse);
         return true;
       }
 
@@ -110,6 +117,21 @@ async function handleInvokeOverlayAction(
     type: 'phase1.runOverlayAction',
     payload: message.payload,
   })) as RunOverlayActionResponse | undefined;
+  sendResponse(response ?? { ok: true });
+}
+
+async function handleSeedBatchOverlaySession(
+  message: Extract<ContentScriptMessage, { type: 'phase2.seedBatchOverlaySession' }>,
+  sendResponse: (response: SeedBatchOverlaySessionResponse) => void
+): Promise<void> {
+  const runtimeMessage: CacheBatchOverlaySessionMessage = {
+    type: 'phase2.cacheBatchOverlaySession',
+    payload: message.payload,
+  };
+
+  const response = (await chrome.runtime.sendMessage(runtimeMessage)) as
+    | SeedBatchOverlaySessionResponse
+    | undefined;
   sendResponse(response ?? { ok: true });
 }
 

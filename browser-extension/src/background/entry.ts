@@ -18,6 +18,7 @@ import type {
   AppendSessionItemResponse,
   BeginRectangleSelectionResponse,
   BackgroundRuntimeMessage,
+  CacheBatchOverlaySessionMessage,
   CacheOverlaySessionMessage,
   RemoveSessionItemResponse,
   RunOverlayActionResponse,
@@ -85,6 +86,15 @@ export function registerBackgroundRuntime(): void {
         return false;
       }
 
+      if (
+        message.type === 'phase2.cacheBatchOverlaySession' &&
+        sender.tab?.id !== undefined
+      ) {
+        cacheBatchOverlaySession(sender.tab.id, message);
+        sendResponse({ ok: true });
+        return false;
+      }
+
       if (message.type === 'phase2.appendSessionItem' && sender.tab) {
         void handleAppendSessionItem(message, sender.tab, sendResponse);
         return true;
@@ -124,6 +134,25 @@ function cacheOverlaySession(
     items: [message.payload.item],
     modelOptions: message.payload.modelOptions,
     lastAction: 'translation',
+  });
+}
+
+function cacheBatchOverlaySession(
+  tabId: number,
+  message: CacheBatchOverlaySessionMessage
+): void {
+  setAnalysisSession(tabId, {
+    items: message.payload.items.map((item) => ({
+      ...item,
+      selection: {
+        ...item.selection,
+        rect: { ...item.selection.rect },
+      },
+    })),
+    modelOptions: [...message.payload.modelOptions],
+    lastAction: message.payload.lastAction ?? 'translation',
+    lastModelName: message.payload.lastModelName,
+    lastCustomPrompt: message.payload.lastCustomPrompt,
   });
 }
 

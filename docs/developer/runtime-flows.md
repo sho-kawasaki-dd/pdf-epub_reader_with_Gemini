@@ -38,26 +38,49 @@
 5. If cache-backed analysis fails for non-rate-limit reasons, AIModel clears the cache linkage and retries without cache.
 6. Cache can expire, be invalidated manually, be replaced, or be cleared on shutdown.
 
-## Browser Extension Phase 1 Flow
+## Browser Extension Phase 2 Flow
 
-1. The user selects text on a web page.
-2. The content script tracks the selection snapshot so text and rectangle data survive short-lived browser selection loss.
-3. A context-menu action reaches the background runtime.
-4. Background requests the latest selection snapshot from the content script.
-5. Background captures a visible-tab screenshot.
-6. Background converts viewport coordinates into bitmap coordinates and crops the selected area before any API call.
-7. Background sends text, cropped image, model choice, and selection metadata to `browser_api`.
-8. The overlay first renders a loading state, then renders the translated result, explanation, or error state.
+1. The user selects text on a web page or starts free-rectangle mode.
+2. The content script keeps the latest text snapshot alive and, when rectangle mode is used, produces an image-first viewport rect payload.
+3. The overlay Add Selection button or rectangle flow sends a session-mutation request to background instead of calling the Local API immediately.
+4. Background captures a visible-tab screenshot for each appended item, crops the item immediately, and stores the cached preview in a tab-scoped analysis session.
+5. Text-selection items default to `includeImage=false`, while free-rectangle items default to `includeImage=true`.
+6. The overlay mirrors the ordered batch, allows remove and image-toggle actions, and keeps model/custom-prompt draft state locally.
+7. When the user runs translation, translation-with-explanation, or custom prompt, background composes one `/analyze/translate` request from the full ordered batch.
+8. Non-empty text items are concatenated as numbered blocks, enabled preview images are sent sparsely, and ordered per-item metadata is attached for diagnostics.
+9. The overlay first renders a loading state, then renders translated Markdown, explanations, raw-response details, or an error state.
 
 ## Overlay Rerun Flow
 
-1. After the first successful capture, background stores a tab-scoped analysis session.
-2. The overlay exposes translation, translation-with-explanation, and custom-prompt action buttons.
-3. When the user presses one of those buttons, the content script forwards the request to background.
-4. Background reuses the cached selection and crop preview instead of reacquiring the live browser selection.
-5. The new API result is rendered into the same overlay.
+1. After at least one item has been appended, background stores a tab-scoped analysis session.
+2. The overlay exposes translation, translation-with-explanation, and custom-prompt actions without forcing the user to recapture selection state.
+3. When the user presses one of those buttons, the content script forwards only the requested action and optional draft inputs.
+4. Background reuses the cached ordered session, including previously captured crop previews, instead of reacquiring live selection state.
+5. The new API result is rendered into the same overlay, and the batch remains available until the overlay is explicitly closed.
 
-This rerun flow exists because live browser selections are unreliable once the user starts interacting with overlay controls.
+This rerun flow exists because live browser selections are unreliable once the user starts interacting with overlay controls, while Phase 2 also needs crop correctness to survive scroll changes and selection loss.
+
+## Free Rectangle Flow
+
+1. Free-rectangle mode can start from the overlay button, the background context-menu route, or the keyboard command route.
+2. The content runtime owns the on-page drag UI and returns viewport-space coordinates only after the user confirms a sufficiently large rectangle.
+3. Background receives the rectangle payload, captures and crops immediately, and appends it as an image-first session item.
+4. The appended item enters the same ordered batch as text selections, so image-only translation and custom-prompt requests use the same analyze route.
+
+## Overlay Close and Clear Flow
+
+1. Closing the overlay removes the content-side UI immediately.
+2. The content runtime then sends a clear-session request to background.
+3. Background deletes the tab-scoped batch session.
+4. Any later rerun request fails closed until a new selection or rectangle item is added.
+
+## Rich Result Rendering Flow
+
+1. Background returns plain text fields from the Local API.
+2. The content overlay passes result text through a renderer pipeline: Markdown parse, sanitize, and KaTeX auto-render.
+3. Code blocks and inline code are excluded from math conversion.
+4. Raw response text stays behind a details disclosure so debugging data is available without dominating the overlay.
+5. If Markdown or math rendering fails, the overlay falls back to safe plain text instead of breaking the panel.
 
 ## Popup Bootstrap Flow
 

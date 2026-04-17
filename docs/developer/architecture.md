@@ -27,13 +27,13 @@ The model layer exposes async methods for document rendering, selection extracti
 
 The infrastructure layer integrates Qt and asyncio using qasync, allowing presenters to await model operations without blocking the GUI thread.
 
-## Browser Extension Phase 1 Boundaries
+## Browser Extension Phase 2 Boundaries
 
 The browser extension uses a runtime-first split rather than an MVC split.
 
-- `background/` owns privileged browser operations such as context menus, screenshot capture, and Local API calls.
-- `content/` owns DOM reads, selection tracking, and the on-page overlay.
-- `popup/` is limited to settings and connectivity checks in Phase 1.
+- `background/` owns privileged browser operations such as context menus, screenshot capture, tab-scoped batch session state, and Local API calls.
+- `content/` owns DOM reads, selection tracking, free-rectangle interaction, and the on-page overlay.
+- `popup/` remains limited to settings and connectivity checks in Phase 2.
 - `shared/` holds contracts and settings used across all extension runtimes.
 
 This split matters because the extension cannot treat every runtime as a normal web page. The content script is close to the page DOM, but it should not become the place where privileged browser APIs or Local API communication are orchestrated. Background remains the coordinator so CSP, permission handling, and capture flows stay in one place.
@@ -47,17 +47,33 @@ The top-level entry files in `browser-extension/src/` are intentionally thin.
 
 Keeping the entries thin makes the Chrome lifecycle easier to reason about and keeps tests focused on usecases, services, selection logic, and overlay rendering rather than on runtime bootstrapping.
 
+### Batch Session Ownership
+
+Phase 2 extends the earlier single-selection cache into a tab-scoped ordered batch session owned by the background runtime.
+
+- Content script can observe live DOM selection state, but it does not own the canonical analysis batch.
+- Background owns appended items, cached crop previews, per-item image inclusion, and last-used action/model state.
+- Overlay mirrors that state and sends mutation requests rather than mutating canonical session data itself.
+
+This ownership model matters because batch correctness depends on privileged screenshot capture, and the batch must survive transient DOM selection loss without duplicating session logic across runtimes.
+
 ### Overlay Session Reuse
 
-Phase 1 supports one important practical optimization: after one selection has been captured and cropped, the overlay can rerun translation, translation with explanation, or custom prompt actions without asking the user to reselect the same text.
+Phase 2 still relies on cached session reuse, but now the reuse boundary is the full ordered batch rather than a single item.
 
-This is why the code stores a tab-scoped analysis session in the background runtime.
-
-- Content script captures the current selection snapshot.
-- Background captures and crops the screenshot once.
-- Overlay reruns reuse the cached selection and crop preview.
+- Content script captures text snapshots or free-rectangle input.
+- Background captures and crops each appended item once.
+- Overlay reruns reuse the cached batch and per-item crop previews.
 
 Without that cache, every action button would need to reacquire live selection state, which is fragile because browser selections often disappear once the context menu or overlay interaction begins.
+
+### Close and Clear Semantics
+
+The batch session is intentionally not long-lived beyond the overlay lifecycle.
+
+- A tab keeps its analysis batch only while the overlay is open for that tab.
+- Closing the overlay clears the canonical session in background.
+- This prevents hidden stale sessions from powering reruns after the UI that explains the batch has disappeared.
 
 ### Selection Snapshot and Crop Rationale
 
@@ -65,12 +81,24 @@ The content script stores the latest selection snapshot because live browser sel
 
 - `selectionchange`, `contextmenu`, `mouseup`, and `keyup` update the last known selection snapshot.
 - If live selection is gone later, the code can still recover the last valid rectangle and text.
+- Free-rectangle mode bypasses live text selection entirely and returns viewport coordinates plus empty text for image-only requests.
 
 The crop flow converts viewport coordinates into screenshot bitmap coordinates before resizing.
 
 - Selection rectangles are captured in CSS viewport space.
 - `captureVisibleTab` returns bitmap dimensions that may not match CSS pixels.
 - The browser-extension crops and resizes before sending the image to Python so upstream requests stay small and focused.
+- Phase 2 captures crops at append time even when a text item currently has `includeImage=false`, because later image toggles must still refer to the original region.
+
+### Rich Result Rendering Responsibility
+
+Phase 2 keeps the browser API response contract text-only and assigns all rich rendering responsibility to the content overlay.
+
+- `browser_api` returns plain text fields for translated text, explanation, and raw response.
+- The overlay renderer is responsible for Markdown parsing, HTML sanitization, KaTeX rendering, and fallback to plain text.
+- Raw response visibility stays a UI concern, not an API concern.
+
+This keeps the Local API transport contract simple while allowing the on-page UI to evolve its rendering policy independently.
 
 ## Browser API Boundaries
 

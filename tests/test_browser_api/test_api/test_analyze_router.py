@@ -87,6 +87,35 @@ def test_translate_accepts_image_only_requests(api_client, stub_analyze_service)
     assert command.selection_metadata["items"][0]["source"] == "free-rectangle"
 
 
+def test_translate_accepts_mixed_text_and_image_requests(api_client, stub_analyze_service) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "1. First block",
+            "images": ["data:image/png;base64,QUJD"],
+            "mode": "translation",
+            "selection_metadata": {
+                "items": [
+                    {
+                        "id": "selection-1",
+                        "order": 0,
+                        "source": "text-selection",
+                        "text": "First block",
+                        "include_image": True,
+                        "image_index": 0,
+                    }
+                ]
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    command = stub_analyze_service.calls[0]
+    assert command.text == "1. First block"
+    assert command.images == ["data:image/png;base64,QUJD"]
+    assert command.selection_metadata["items"][0]["include_image"] is True
+
+
 def test_translate_rejects_custom_prompt_mode_without_prompt(api_client) -> None:
     response = api_client.post(
         "/analyze/translate",

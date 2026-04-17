@@ -205,6 +205,33 @@ export interface AppendSessionItemMessage {
   };
 }
 
+export interface SeedBatchOverlaySessionMessage {
+  type: 'phase2.seedBatchOverlaySession';
+  payload: {
+    items: SelectionSessionItem[];
+    modelOptions: ModelOption[];
+    lastAction?: AnalysisAction;
+    lastModelName?: string;
+    lastCustomPrompt?: string;
+  };
+}
+
+export interface SeedBatchOverlaySessionResponse {
+  ok: boolean;
+  error?: string;
+}
+
+export interface CacheBatchOverlaySessionMessage {
+  type: 'phase2.cacheBatchOverlaySession';
+  payload: {
+    items: SelectionSessionItem[];
+    modelOptions: ModelOption[];
+    lastAction?: AnalysisAction;
+    lastModelName?: string;
+    lastCustomPrompt?: string;
+  };
+}
+
 export interface AppendSessionItemResponse {
   ok: boolean;
   item?: SelectionSessionItem;
@@ -249,11 +276,13 @@ export type ContentScriptMessage =
   | RenderOverlayMessage
   | SeedOverlaySessionMessage
   | InvokeOverlayActionMessage
+  | SeedBatchOverlaySessionMessage
   | BeginRectangleSelectionMessage;
 
 export type BackgroundRuntimeMessage =
   | RunOverlayActionMessage
   | CacheOverlaySessionMessage
+  | CacheBatchOverlaySessionMessage
   | AppendSessionItemMessage
   | RemoveSessionItemMessage
   | ToggleSessionItemImageMessage
