@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
+const collectSelectionMock = vi.hoisted(() => vi.fn());
 const renderOverlayMock = vi.hoisted(() => vi.fn());
 const cropSelectionImageMock = vi.hoisted(() => vi.fn());
 
@@ -9,6 +10,7 @@ vi.mock('../../../src/shared/storage/settingsStorage', () => ({
 }));
 
 vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
+  collectSelection: collectSelectionMock,
   renderOverlay: renderOverlayMock,
 }));
 
@@ -21,6 +23,7 @@ import {
   getAnalysisSession,
 } from '../../../src/background/services/analysisSessionStore';
 import {
+  appendLiveSelectionSessionItem,
   appendSelectionSessionItem,
   removeSelectionSessionItem,
   toggleSelectionSessionItemImage,
@@ -39,6 +42,18 @@ describe('updateSelectionSession', () => {
     cropSelectionImageMock.mockResolvedValue({
       imageDataUrl: 'data:image/webp;base64,crop',
       durationMs: 12.5,
+    });
+    collectSelectionMock.mockResolvedValue({
+      ok: true,
+      payload: {
+        text: 'Selected text',
+        rect: { left: 1, top: 2, width: 3, height: 4 },
+        viewportWidth: 100,
+        viewportHeight: 100,
+        devicePixelRatio: 1,
+        url: 'https://example.com',
+        pageTitle: 'Example',
+      },
     });
   });
 
@@ -69,6 +84,52 @@ describe('updateSelectionSession', () => {
       expect.objectContaining({
         sessionReady: true,
         sessionItems: [expect.objectContaining({ id: item.id })],
+      })
+    );
+  });
+
+  it('appends the current live selection through the content capture gateway', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+
+    const item = await appendLiveSelectionSessionItem({
+      id: 7,
+      windowId: 3,
+    } as chrome.tabs.Tab);
+
+    expect(collectSelectionMock).toHaveBeenCalledWith(7, '', {
+      liveOnly: true,
+    });
+    expect(item.selection.text).toBe('Selected text');
+    expect(renderOverlayMock).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        sessionReady: true,
+        sessionItems: [expect.objectContaining({ id: item.id })],
+      })
+    );
+  });
+
+  it('renders an explicit overlay error when no live selection exists for batch append', async () => {
+    collectSelectionMock.mockResolvedValueOnce({
+      ok: false,
+      error: 'A live text selection is required. Select text on the page and try again.',
+    });
+
+    await expect(
+      appendLiveSelectionSessionItem({ id: 7, windowId: 3 } as chrome.tabs.Tab)
+    ).rejects.toThrow(
+      'A live text selection is required. Select text on the page and try again.'
+    );
+
+    expect(renderOverlayMock).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        status: 'error',
+        sessionReady: false,
+        error: 'A live text selection is required. Select text on the page and try again.',
       })
     );
   });

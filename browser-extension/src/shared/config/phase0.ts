@@ -1,6 +1,8 @@
 export const PHASE0_MENU_ID = 'gem-read-phase0-translate-test';
 export const PHASE2_RECTANGLE_MENU_ID = 'gem-read-phase2-start-rectangle';
 export const PHASE2_RECTANGLE_COMMAND_ID = 'gem-read-phase2-start-rectangle';
+export const PHASE3_OPEN_OVERLAY_COMMAND_ID = 'gem-read-phase3-open-overlay';
+export const PHASE3_ADD_SELECTION_COMMAND_ID = 'gem-read-phase3-add-selection';
 export const DEFAULT_LOCAL_API_PORT = 8000;
 export const DEFAULT_LOCAL_API_BASE_URL = `http://127.0.0.1:${DEFAULT_LOCAL_API_PORT}`;
 export const EXTENSION_SETTINGS_STORAGE_KEY = 'gem-read.settings';

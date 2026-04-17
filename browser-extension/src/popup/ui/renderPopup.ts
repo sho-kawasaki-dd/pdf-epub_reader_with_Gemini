@@ -6,8 +6,8 @@ import {
 import type {
   ModelCatalogSource,
   ModelOption,
+  OpenOverlayResponse,
   PopupStatusPayload,
-  RenderOverlayMessage,
 } from '../../shared/contracts/messages';
 import { fetchPopupBootstrap } from '../../shared/gateways/localApiGateway';
 import {
@@ -221,8 +221,8 @@ export async function renderPopup(documentRef: Document): Promise<void> {
             <button class="button button-secondary" type="button" data-role="refresh-button">Refresh</button>
             <button class="button button-primary" type="submit" data-role="save-button">Save</button>
           </div>
-          <button class="button button-secondary button-wide" type="button" data-role="open-overlay-button">Open Overlay Shortcut</button>
-          <p class="hint">The shortcut opens a lightweight overlay on the active tab until Phase E moves the full action UI there.</p>
+          <button class="button button-secondary button-wide" type="button" data-role="open-overlay-button">Open Overlay On Active Tab</button>
+          <p class="hint">Browser commands are the primary flow in Phase 3. This button uses the same active-tab overlay reopen path as the keyboard shortcut.</p>
         </form>
       </div>
     </div>
@@ -495,36 +495,16 @@ function setMessage(refs: PopupRefs, message: string, isError: boolean): void {
 }
 
 async function openOverlayShortcut(
-  state: PopupViewState,
-  refs: PopupRefs
+  _state: PopupViewState,
+  _refs: PopupRefs
 ): Promise<void> {
-  const [activeTab] = await chrome.tabs.query({
-    active: true,
-    currentWindow: true,
-  });
-  if (!activeTab?.id) {
-    throw new Error('No active browser tab is available for overlay preview.');
+  const response = (await chrome.runtime.sendMessage({
+    type: 'phase3.openOverlay',
+  })) as OpenOverlayResponse | undefined;
+
+  if (response?.ok === false) {
+    throw new Error(response.error ?? 'Failed to open the Gem Read overlay.');
   }
-
-  const message: RenderOverlayMessage = {
-    type: 'phase0.renderOverlay',
-    payload: {
-      status: 'success',
-      action: 'translation',
-      modelName: refs.defaultModelInput.value.trim() || undefined,
-      modelOptions: state.models,
-      sessionReady: false,
-      selectedText: 'Gem Read popup shortcut',
-      translatedText:
-        'Popup settings are ready. Use page selection and the context menu while Phase D/E are still in progress.',
-      rawResponse: `API: ${state.status.apiBaseUrl}\nStatus: ${formatStatusBadge(state.status.connectionStatus)}`,
-      usedMock: state.status.connectionStatus === 'mock-mode',
-      availability: state.status.availability,
-      degradedReason: state.status.degradedReason,
-    },
-  };
-
-  await chrome.tabs.sendMessage(activeTab.id, message);
 }
 
 function formatStatusBadge(

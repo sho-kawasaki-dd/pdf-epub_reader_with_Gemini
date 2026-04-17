@@ -1,16 +1,20 @@
 import { ensurePhase0ContextMenu } from './menus/phase0ContextMenu';
+import { openOverlaySession } from './usecases/openOverlaySession';
 import {
   clearAnalysisSession,
   setAnalysisSession,
 } from './services/analysisSessionStore';
 import { runSelectionAnalysis } from './usecases/runSelectionAnalysis';
 import {
+  appendLiveSelectionSessionItem,
   appendSelectionSessionItem,
   removeSelectionSessionItem,
   toggleSelectionSessionItemImage,
 } from './usecases/updateSelectionSession';
 import {
   PHASE0_MENU_ID,
+  PHASE3_ADD_SELECTION_COMMAND_ID,
+  PHASE3_OPEN_OVERLAY_COMMAND_ID,
   PHASE2_RECTANGLE_COMMAND_ID,
   PHASE2_RECTANGLE_MENU_ID,
 } from '../shared/config/phase0';
@@ -21,6 +25,7 @@ import type {
   CacheBatchOverlaySessionMessage,
   CacheOverlaySessionMessage,
   RemoveSessionItemResponse,
+  OpenOverlayResponse,
   RunOverlayActionResponse,
   ToggleSessionItemImageResponse,
 } from '../shared/contracts/messages';
@@ -58,11 +63,7 @@ export function registerBackgroundRuntime(): void {
   });
 
   chrome.commands?.onCommand.addListener((command, tab) => {
-    if (command !== PHASE2_RECTANGLE_COMMAND_ID || !tab?.id) {
-      return;
-    }
-
-    void handleRectangleSelectionStart(tab, 'command');
+    void handleBrowserCommand(command, tab);
   });
 
   chrome.runtime.onMessage.addListener(
@@ -93,6 +94,11 @@ export function registerBackgroundRuntime(): void {
         cacheBatchOverlaySession(sender.tab.id, message);
         sendResponse({ ok: true });
         return false;
+      }
+
+      if (message.type === 'phase3.openOverlay') {
+        void handleOpenOverlayRequest(sendResponse);
+        return true;
       }
 
       if (message.type === 'phase2.appendSessionItem' && sender.tab) {
@@ -126,6 +132,34 @@ export function registerBackgroundRuntime(): void {
   );
 }
 
+async function handleBrowserCommand(
+  command: string,
+  tab?: chrome.tabs.Tab
+): Promise<void> {
+  const targetTab = await resolveTargetTab(tab);
+  if (!targetTab?.id) {
+    return;
+  }
+
+  if (command === PHASE3_OPEN_OVERLAY_COMMAND_ID) {
+    await openOverlaySession(targetTab.id);
+    return;
+  }
+
+  if (command === PHASE3_ADD_SELECTION_COMMAND_ID) {
+    try {
+      await appendLiveSelectionSessionItem(targetTab);
+    } catch {
+      // Explicit overlay errors are already rendered by the usecase when possible.
+    }
+    return;
+  }
+
+  if (command === PHASE2_RECTANGLE_COMMAND_ID) {
+    await handleRectangleSelectionStart(targetTab, 'command');
+  }
+}
+
 function cacheOverlaySession(
   tabId: number,
   message: CacheOverlaySessionMessage
@@ -154,6 +188,46 @@ function cacheBatchOverlaySession(
     lastModelName: message.payload.lastModelName,
     lastCustomPrompt: message.payload.lastCustomPrompt,
   });
+}
+
+async function handleOpenOverlayRequest(
+  sendResponse: (response: OpenOverlayResponse) => void
+): Promise<void> {
+  try {
+    const targetTab = await resolveTargetTab();
+    if (!targetTab?.id) {
+      sendResponse({
+        ok: false,
+        error: 'No active browser tab is available for Gem Read.',
+      });
+      return;
+    }
+
+    await openOverlaySession(targetTab.id);
+    sendResponse({ ok: true });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to open the Gem Read overlay.',
+    });
+  }
+}
+
+async function resolveTargetTab(
+  tab?: chrome.tabs.Tab
+): Promise<chrome.tabs.Tab | undefined> {
+  if (tab?.id !== undefined) {
+    return tab;
+  }
+
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  return activeTab;
 }
 
 async function handleRectangleSelectionStart(

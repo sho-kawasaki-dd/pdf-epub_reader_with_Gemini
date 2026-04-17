@@ -7,6 +7,10 @@ import type {
 // Context menu 起動時には live Selection が消えていることがあるため、直近 snapshot を保持しておく。
 let lastSelectionSnapshot: SelectionCapturePayload | null = null;
 
+export interface CollectSelectionOptions {
+  liveOnly?: boolean;
+}
+
 /**
  * ユーザー操作に追従して selection snapshot を更新し、遅延した background 処理でも同じ選択を再利用できるようにする。
  */
@@ -18,8 +22,25 @@ export function startSelectionTracking(): void {
 }
 
 export function collectSelection(
-  fallbackText?: string
+  fallbackText?: string,
+  options: CollectSelectionOptions = {}
 ): SelectionCaptureResponse {
+  if (options.liveOnly) {
+    const liveSnapshot = buildSelectionSnapshot();
+    if (liveSnapshot) {
+      lastSelectionSnapshot = liveSnapshot;
+      return {
+        ok: true,
+        payload: liveSnapshot,
+      };
+    }
+
+    return {
+      ok: false,
+      error: 'A live text selection is required. Select text on the page and try again.',
+    };
+  }
+
   const liveSnapshot = buildSelectionSnapshot(fallbackText);
   if (liveSnapshot) {
     lastSelectionSnapshot = liveSnapshot;

@@ -46,7 +46,7 @@ When the selection includes cropped image content, the request can be sent as mu
 - `Ctrl+Shift+G`: open cache management
 - `Esc`: clear selections
 
-## Use the Browser Extension Phase 1 Preview
+## Use the Browser Extension Phase 3 Workflow
 
 1. Start the local API with `uv run python -m browser_api`.
 2. Open the extension popup and save the Local API Base URL.
@@ -58,27 +58,46 @@ Badge meanings:
 - `Mock Mode`: extension can reach the local API, but the API is returning fallback or mock-mode information
 - `Unreachable`: extension cannot reach the configured local API URL
 
-4. Select text on a page.
-5. Use the selection context menu entry `Gem Read で翻訳`.
-6. In the overlay, inspect the crop preview and the initial translation result.
-7. If you want a different action without reselection, use one of the overlay actions:
+1. Select text on a page.
+1. Run the first analysis from the page selection flow.
+
+Available entry points:
+
+- Browser command `Ctrl+Shift+O`: reopen the overlay for the current tab
+- Browser command `Ctrl+Shift+B`: append the current live text selection to the batch
+- Browser command `Ctrl+Shift+Y`: start free-rectangle capture
+- Popup button `Open Overlay On Active Tab`: helper entry point that uses the same reopen flow as `Ctrl+Shift+O`
+
+1. In the overlay, inspect the crop preview, batch list, and latest result.
+1. If you want a different action without reselection, use one of the overlay actions:
 
 - `Translate`
 - `Translate + Explain`
 - `Run Custom Prompt`
 
-8. Optionally enter a different model ID in the overlay before rerunning.
-9. Use the minimize button if you want to keep the current session available while reducing the overlay footprint.
+1. Optionally enter a different model ID in the overlay before rerunning.
+1. Use the keyboard bindings when the overlay is visible:
 
-Current Phase 1 scope:
+- `Esc`: minimize the overlay
+- `Shift+Esc`: close the overlay and clear the tab session
+- `Ctrl+Enter`: submit the custom prompt while the custom prompt textarea is focused
+- `Alt+R`: rerun the last action with the last model and last custom prompt when focus is not in an editable control
 
-- Single text selection
+1. Use the minimize button or `Esc` if you want to keep the current session available while reducing the overlay footprint.
+
+Current Phase 3 scope:
+
+- Batch sessions across multiple text selections
+- Free-rectangle capture mode
 - Popup-managed local API URL and default model
 - Overlay reruns for translation, explanation, and custom prompt
+- Keyboard-first overlay reopen and rerun flow
 
-Not yet included in Phase 1:
+Current limitations:
 
-- Multi-selection batching
-- Free-rectangle capture mode
 - Article-wide extraction
 - Context Cache integration from the extension UI
+- Reload or browser-restart session restore
+- Restricted pages such as browser internal pages, extension pages, and other URLs where content scripts cannot be injected
+
+For `Ctrl+Shift+B`, Gem Read uses only the current live text selection. It does not reuse the last rectangle capture or the previous batch item when no live selection is active.

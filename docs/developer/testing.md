@@ -71,7 +71,7 @@ The browser_api tests stub the AI gateway or FastAPI dependency wiring so they d
 - Chromium smoke E2E: `npm run test:e2e`
 - Build regression check: `npm run build`
 
-The Playwright smoke test loads the unpacked extension from `dist/`, saves popup settings against a stub local API, selects text on a local fixture page, seeds an overlay session, and confirms the explanation rerun path through the background runtime. Native browser context menus are not automated in this smoke path; the unit test suite covers the background usecase that normally sits behind the context-menu click.
+The Playwright smoke test loads the unpacked extension from `dist/`, saves popup settings against a stub local API, reopens the overlay through the background runtime, and exercises keyboard-first overlay flows such as `Esc`, `Alt+R`, and `Ctrl+Enter`. Native browser context menus are not automated in this smoke path; the unit test suite covers the background usecase that normally sits behind the context-menu click.
 
 ## CI Checks
 
@@ -92,8 +92,8 @@ These workflows are intentionally split so branch protection can require each ga
 - `background/services/cropSelectionImage.ts`: crop coordinate scaling and output encoding
 - `shared/gateways/localApiGateway.ts`: popup bootstrap and analyze request shaping
 - `content/selection/snapshotStore.ts`: selection capture, fallback reuse, and guidance errors
-- `content/overlay/renderOverlay.ts`: DOM rendering, action controls, minimize/reopen flow, and background message dispatch
-- `popup/ui/renderPopup.ts`: popup status rendering, settings persistence, and overlay shortcut flow
+- `content/overlay/renderOverlay.ts`: DOM rendering, action controls, keyboard bindings, minimize/reopen flow, and background message dispatch
+- `popup/ui/renderPopup.ts`: popup status rendering, settings persistence, and background-driven overlay reopen flow
 
 ## Smoke Launch Checks
 
@@ -106,4 +106,11 @@ These workflows are intentionally split so branch protection can require each ga
 - Start `uv run python -m browser_api` before opening the extension popup.
 - In the popup, confirm `Reachable`, `Mock Mode`, or `Unreachable` matches the local API state.
 - With `GEMINI_API_KEY` unset, confirm popup can still reach the API and the overlay shows explicit mock-mode text.
-- After a selection-triggered request, confirm overlay action buttons can rerun explanation and custom prompt without recapturing the selection.
+- On a regular http or https page, select text and confirm `Ctrl+Shift+O` reopens the cached overlay panel.
+- With no cached session, confirm `Ctrl+Shift+O` shows the launcher-only overlay instead of a full panel.
+- With a live text selection active, confirm `Ctrl+Shift+B` appends only the current live selection to the batch.
+- With no live text selection active, confirm `Ctrl+Shift+B` renders an explicit overlay error instead of failing silently.
+- Confirm `Ctrl+Shift+Y` starts rectangle capture and `Esc` still cancels rectangle mode without minimizing the overlay.
+- Confirm `Esc` minimizes the overlay, `Shift+Esc` closes it and clears the tab session, `Alt+R` reruns the last action, and `Ctrl+Enter` submits the custom prompt only while the textarea is focused.
+- Confirm the popup `Open Overlay On Active Tab` button triggers the same reopen flow as the browser command.
+- On restricted pages where content scripts cannot run, confirm commands do not inject the overlay and document that limitation instead of treating it as a regression.

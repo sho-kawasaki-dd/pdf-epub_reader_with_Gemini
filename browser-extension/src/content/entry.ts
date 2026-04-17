@@ -33,7 +33,11 @@ export function registerContentRuntime(): void {
   chrome.runtime.onMessage.addListener(
     (message: ContentScriptMessage, _sender, sendResponse) => {
       if (message.type === 'phase0.collectSelection') {
-        sendResponse(collectSelection(message.fallbackText));
+        sendResponse(
+          collectSelection(message.fallbackText, {
+            liveOnly: message.liveOnly,
+          })
+        );
         return false;
       }
 

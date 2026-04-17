@@ -8,7 +8,10 @@ import type {
   SelectionSessionSource,
 } from '../../shared/contracts/messages';
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
-import { renderOverlay } from '../gateways/tabMessagingGateway';
+import {
+  collectSelection,
+  renderOverlay,
+} from '../gateways/tabMessagingGateway';
 import {
   clearAnalysisSession,
   getAnalysisSession,
@@ -63,6 +66,43 @@ export async function appendSelectionSessionItem(
   setAnalysisSession(tabId, nextSession);
   await renderOverlay(tabId, buildOverlayPayload(nextSession));
   return nextItem;
+}
+
+export async function appendLiveSelectionSessionItem(
+  tab: chrome.tabs.Tab
+): Promise<SelectionSessionItem> {
+  const tabId = tab.id;
+  if (tabId === undefined) {
+    throw new Error('Active tab could not be resolved.');
+  }
+
+  const selection = await collectSelection(tabId, '', { liveOnly: true });
+  if (!selection.ok || !selection.payload) {
+    const message =
+      selection.error ??
+      'A live text selection is required. Select text on the page and try again.';
+    const settings = await loadExtensionSettings();
+    const session = getAnalysisSession(tabId);
+    await renderOverlay(
+      tabId,
+      session
+        ? buildOverlayPayload(session, {
+            status: 'error',
+            error: message,
+            launcherOnly: false,
+            preserveDrafts: true,
+          })
+        : buildEmptyOverlayPayload(settings, {
+            status: 'error',
+            error: message,
+            launcherOnly: false,
+            preserveDrafts: true,
+          })
+    );
+    throw new Error(message);
+  }
+
+  return appendSelectionSessionItem(tab, selection.payload, 'text-selection');
 }
 
 export async function removeSelectionSessionItem(
@@ -147,12 +187,18 @@ export async function toggleSelectionSessionItemImage(
 }
 
 export function buildOverlayPayload(
-  session: SelectionAnalysisSession
+  session: SelectionAnalysisSession,
+  options: {
+    status?: OverlayPayload['status'];
+    error?: string;
+    launcherOnly?: boolean;
+    preserveDrafts?: boolean;
+  } = {}
 ): OverlayPayload {
   const latestItem = getLatestSelectionItem(session);
 
   return {
-    status: 'success',
+    status: options.status ?? 'success',
     action: session.lastAction,
     modelName: session.lastModelName,
     modelOptions: [...session.modelOptions],
@@ -166,9 +212,38 @@ export function buildOverlayPayload(
     maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
     customPrompt: session.lastCustomPrompt,
     sessionReady: session.items.length > 0,
+    launcherOnly: options.launcherOnly,
+    preserveDrafts: options.preserveDrafts,
     selectedText: buildSelectedText(latestItem),
     previewImageUrl: latestItem?.previewImageUrl,
     timingMs: latestItem?.cropDurationMs,
+    error: options.error,
+  };
+}
+
+export function buildEmptyOverlayPayload(
+  settings: ExtensionSettings,
+  options: {
+    status?: OverlayPayload['status'];
+    error?: string;
+    launcherOnly?: boolean;
+    preserveDrafts?: boolean;
+  } = {}
+): OverlayPayload {
+  return {
+    status: options.status ?? 'success',
+    modelName: settings.defaultModel || undefined,
+    modelOptions: settings.lastKnownModels.map((modelId) => ({
+      modelId,
+      displayName: modelId,
+    })),
+    sessionItems: [],
+    maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
+    sessionReady: false,
+    launcherOnly: options.launcherOnly,
+    preserveDrafts: options.preserveDrafts,
+    selectedText: '',
+    error: options.error,
   };
 }
 

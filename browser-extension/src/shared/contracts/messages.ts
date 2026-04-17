@@ -112,6 +112,8 @@ export interface OverlayPayload {
   maxSessionItems?: number;
   customPrompt?: string;
   sessionReady?: boolean;
+  launcherOnly?: boolean;
+  preserveDrafts?: boolean;
   selectedText?: string;
   translatedText?: string;
   explanation?: string | null;
@@ -132,6 +134,7 @@ export interface OverlayPayload {
 export interface CollectSelectionMessage {
   type: 'phase0.collectSelection';
   fallbackText?: string;
+  liveOnly?: boolean;
 }
 
 export interface RenderOverlayMessage {
@@ -271,6 +274,15 @@ export interface ClearOverlaySessionResponse {
   ok: boolean;
 }
 
+export interface OpenOverlayMessage {
+  type: 'phase3.openOverlay';
+}
+
+export interface OpenOverlayResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export type ContentScriptMessage =
   | CollectSelectionMessage
   | RenderOverlayMessage
@@ -286,4 +298,5 @@ export type BackgroundRuntimeMessage =
   | AppendSessionItemMessage
   | RemoveSessionItemMessage
   | ToggleSessionItemImageMessage
-  | ClearOverlaySessionMessage;
+  | ClearOverlaySessionMessage
+  | OpenOverlayMessage;

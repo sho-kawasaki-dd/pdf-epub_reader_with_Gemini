@@ -159,8 +159,7 @@ describe('renderPopup', () => {
   it('opens the overlay shortcut on the active tab', async () => {
     document.body.innerHTML = '<div id="app"></div>';
     const chromeMock = getChromeMock();
-    chromeMock.tabs.query.mockResolvedValue([{ id: 7 }] as chrome.tabs.Tab[]);
-    chromeMock.tabs.sendMessage.mockResolvedValue(undefined);
+    chromeMock.runtime.sendMessage.mockResolvedValue({ ok: true });
 
     const fetchMock = vi
       .fn()
@@ -197,19 +196,8 @@ describe('renderPopup', () => {
     ).click();
     await settle();
 
-    expect(chromeMock.tabs.query).toHaveBeenCalledWith({
-      active: true,
-      currentWindow: true,
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'phase3.openOverlay',
     });
-    expect(chromeMock.tabs.sendMessage).toHaveBeenCalledWith(
-      7,
-      expect.objectContaining({
-        type: 'phase0.renderOverlay',
-        payload: expect.objectContaining({
-          status: 'success',
-          modelName: 'gemini-2.5-pro',
-        }),
-      })
-    );
   });
 });

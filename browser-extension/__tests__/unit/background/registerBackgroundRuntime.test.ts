@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getChromeMock } from '../../mocks/chrome';
 
 const ensurePhase0ContextMenuMock = vi.hoisted(() => vi.fn());
+const openOverlaySessionMock = vi.hoisted(() => vi.fn());
 const runSelectionAnalysisMock = vi.hoisted(() => vi.fn());
+const appendLiveSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const appendSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const removeSelectionSessionItemMock = vi.hoisted(() => vi.fn());
 const toggleSelectionSessionItemImageMock = vi.hoisted(() => vi.fn());
@@ -16,7 +18,12 @@ vi.mock('../../../src/background/usecases/runSelectionAnalysis', () => ({
   runSelectionAnalysis: runSelectionAnalysisMock,
 }));
 
+vi.mock('../../../src/background/usecases/openOverlaySession', () => ({
+  openOverlaySession: openOverlaySessionMock,
+}));
+
 vi.mock('../../../src/background/usecases/updateSelectionSession', () => ({
+  appendLiveSelectionSessionItem: appendLiveSelectionSessionItemMock,
   appendSelectionSessionItem: appendSelectionSessionItemMock,
   removeSelectionSessionItem: removeSelectionSessionItemMock,
   toggleSelectionSessionItemImage: toggleSelectionSessionItemImageMock,
@@ -29,6 +36,8 @@ import {
 } from '../../../src/background/services/analysisSessionStore';
 import {
   PHASE0_MENU_ID,
+  PHASE3_ADD_SELECTION_COMMAND_ID,
+  PHASE3_OPEN_OVERLAY_COMMAND_ID,
   PHASE2_RECTANGLE_COMMAND_ID,
   PHASE2_RECTANGLE_MENU_ID,
 } from '../../../src/shared/config/phase0';
@@ -130,6 +139,31 @@ describe('registerBackgroundRuntime', () => {
     expect(getChromeMock().tabs.sendMessage).toHaveBeenCalledWith(7, {
       type: 'phase2.beginRectangleSelection',
       payload: { triggerSource: 'command' },
+    });
+  });
+
+  it('dispatches the overlay reopen command to the open-overlay usecase', async () => {
+    openOverlaySessionMock.mockResolvedValue(undefined);
+    registerBackgroundRuntime();
+
+    const handler = getCommandHandler();
+    handler(PHASE3_OPEN_OVERLAY_COMMAND_ID, { id: 7, windowId: 3 });
+    await Promise.resolve();
+
+    expect(openOverlaySessionMock).toHaveBeenCalledWith(7);
+  });
+
+  it('dispatches the add-selection command to the live-selection append usecase', async () => {
+    appendLiveSelectionSessionItemMock.mockResolvedValue({ id: 'selection-live' });
+    registerBackgroundRuntime();
+
+    const handler = getCommandHandler();
+    handler(PHASE3_ADD_SELECTION_COMMAND_ID, { id: 7, windowId: 3 });
+    await Promise.resolve();
+
+    expect(appendLiveSelectionSessionItemMock).toHaveBeenCalledWith({
+      id: 7,
+      windowId: 3,
     });
   });
 
@@ -304,6 +338,36 @@ describe('registerBackgroundRuntime', () => {
       'selection-2',
       true
     );
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('opens the overlay on the active tab for popup-triggered requests', async () => {
+    openOverlaySessionMock.mockResolvedValue(undefined);
+    (getChromeMock().tabs.query as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 7, windowId: 3 },
+    ]);
+    registerBackgroundRuntime();
+
+    const handler = getRuntimeMessageHandler();
+    const sendResponse = vi.fn();
+    const keepChannelOpen = handler(
+      {
+        type: 'phase3.openOverlay',
+      },
+      {},
+      sendResponse
+    );
+
+    expect(keepChannelOpen).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getChromeMock().tabs.query).toHaveBeenCalledWith({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    expect(openOverlaySessionMock).toHaveBeenCalledWith(7);
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
   });
 });

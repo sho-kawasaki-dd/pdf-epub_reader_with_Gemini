@@ -16,6 +16,7 @@ import {
   RICH_TEXT_STYLE_BLOCK,
 } from './richTextRenderer';
 import {
+  isRectangleSelectionActive,
   startRectangleSelection,
 } from '../selection/rectangleSelectionController';
 import {
@@ -34,26 +35,44 @@ let draftModelName = '';
 let draftCustomPrompt = '';
 let isRectangleModeActive = false;
 let isRawResponseExpanded = false;
+let currentOverlayPayload: OverlayPayload | null = null;
+let keyboardHandlerAttached = false;
 
 /**
  * Overlay は content script 側で一元管理し、payload から都度 DOM を再構築する。
  * こうしておくと background から渡る状態だけで表示を復元でき、ページ本体の DOM 状態に依存しにくい。
  */
 export function renderOverlay(payload: OverlayPayload): void {
+  if (payload.launcherOnly !== undefined) {
+    isOverlayMinimized = payload.launcherOnly;
+  }
+
   const sessionItems = syncSelectionBatch(payload.sessionItems);
   const maxSessionItems = payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS;
+  const effectivePayload: OverlayPayload = {
+    ...payload,
+    launcherOnly: undefined,
+  };
+  currentOverlayPayload = effectivePayload;
 
-  if (payload.modelName !== undefined) {
+  if (
+    payload.modelName !== undefined &&
+    (!payload.preserveDrafts || draftModelName.length === 0)
+  ) {
     draftModelName = payload.modelName;
   }
-  if (payload.customPrompt !== undefined) {
+  if (
+    payload.customPrompt !== undefined &&
+    (!payload.preserveDrafts || draftCustomPrompt.length === 0)
+  ) {
     draftCustomPrompt = payload.customPrompt;
   }
 
   const root = ensureOverlayRoot();
+  ensureKeyboardHandler();
   root.innerHTML = isOverlayMinimized
-    ? renderLauncherMarkup(payload)
-    : renderPanelMarkup(payload, sessionItems, maxSessionItems);
+    ? renderLauncherMarkup(effectivePayload)
+    : renderPanelMarkup(effectivePayload, sessionItems, maxSessionItems);
 
   if (isOverlayMinimized) {
     const launcherButton =
@@ -62,7 +81,9 @@ export function renderOverlay(payload: OverlayPayload): void {
       root.querySelector<HTMLButtonElement>('.launcher-close');
     launcherButton?.addEventListener('click', () => {
       isOverlayMinimized = false;
-      renderOverlay(payload);
+      if (currentOverlayPayload) {
+        renderOverlay(currentOverlayPayload);
+      }
     });
     closeButton?.addEventListener('click', () => {
       void closeOverlay();
@@ -145,8 +166,10 @@ export function renderOverlay(payload: OverlayPayload): void {
   }
 
   const latestSessionItem = sessionItems.at(-1);
-  const selectionText = payload.selectedText || buildSelectionText(sessionItems);
-  const previewImageUrl = payload.previewImageUrl ?? latestSessionItem?.previewImageUrl;
+  const selectionText =
+    effectivePayload.selectedText || buildSelectionText(sessionItems);
+  const previewImageUrl =
+    effectivePayload.previewImageUrl ?? latestSessionItem?.previewImageUrl;
 
   selectionBox.textContent = selectionText || 'No selection text captured.';
 
@@ -155,25 +178,25 @@ export function renderOverlay(payload: OverlayPayload): void {
     previewImage.src = previewImageUrl;
   }
 
-  resultSection.hidden = !payload.translatedText;
-  resultLabel.textContent = getResultLabel(payload.action);
-  renderRichText(resultBox, payload.translatedText || '');
+  resultSection.hidden = !effectivePayload.translatedText;
+  resultLabel.textContent = getResultLabel(effectivePayload.action);
+  renderRichText(resultBox, effectivePayload.translatedText || '');
 
-  explanationSection.hidden = !payload.explanation;
-  renderRichText(explanationBox, payload.explanation || '');
+  explanationSection.hidden = !effectivePayload.explanation;
+  renderRichText(explanationBox, effectivePayload.explanation || '');
 
-  rawSection.hidden = !payload.rawResponse;
-  rawBox.textContent = payload.rawResponse || '';
-  rawDetails.open = Boolean(payload.rawResponse) && isRawResponseExpanded;
+  rawSection.hidden = !effectivePayload.rawResponse;
+  rawBox.textContent = effectivePayload.rawResponse || '';
+  rawDetails.open = Boolean(effectivePayload.rawResponse) && isRawResponseExpanded;
 
-  errorSection.hidden = !payload.error;
-  errorBox.textContent = payload.error || '';
+  errorSection.hidden = !effectivePayload.error;
+  errorBox.textContent = effectivePayload.error || '';
 
-  bannerSection.hidden = !shouldShowBanner(payload);
-  bannerBox.textContent = buildBannerText(payload);
+  bannerSection.hidden = !shouldShowBanner(effectivePayload);
+  bannerBox.textContent = buildBannerText(effectivePayload);
 
   modelInput.value = draftModelName;
-  modelDatalist.innerHTML = (payload.modelOptions ?? [])
+  modelDatalist.innerHTML = (effectivePayload.modelOptions ?? [])
     .map(
       (model) =>
         `<option value="${escapeHtml(model.modelId)}">${escapeHtml(model.displayName)}</option>`
@@ -183,22 +206,26 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   // cached session がない段階で action を押しても再利用できる selection がないため、button を閉じておく。
   const actionsEnabled =
-    Boolean(payload.sessionReady) && payload.status !== 'loading';
+    Boolean(effectivePayload.sessionReady) && effectivePayload.status !== 'loading';
   translationButton.disabled = !actionsEnabled;
   explanationButton.disabled = !actionsEnabled;
   customButton.disabled =
     !actionsEnabled || customPromptInput.value.trim().length === 0;
   addSelectionButton.disabled =
-    payload.status === 'loading' || !canAppendSelectionBatchItem() || isRectangleModeActive;
+    effectivePayload.status === 'loading' ||
+    !canAppendSelectionBatchItem() ||
+    isRectangleModeActive;
   addRectangleButton.disabled =
-    payload.status === 'loading' || !canAppendSelectionBatchItem() || isRectangleModeActive;
+    effectivePayload.status === 'loading' ||
+    !canAppendSelectionBatchItem() ||
+    isRectangleModeActive;
   batchHint.textContent = buildBatchHint(maxSessionItems, isRectangleModeActive);
   actionHint.textContent = actionsEnabled
-    ? 'Reuse the captured selection with a different action or model.'
+    ? 'Reuse the cached batch with a different action or model. Press Alt+R to rerun the last action or Ctrl+Enter in the custom prompt box to submit.'
     : 'Select text and run Gem Read once before action buttons become available.';
 
-  metaBox.textContent = buildMetaText(payload);
-  metaBox.classList.toggle('loading', payload.status === 'loading');
+  metaBox.textContent = buildMetaText(effectivePayload);
+  metaBox.classList.toggle('loading', effectivePayload.status === 'loading');
   rawDetails.addEventListener('toggle', () => {
     isRawResponseExpanded = rawDetails.open;
   });
@@ -241,10 +268,10 @@ export function renderOverlay(payload: OverlayPayload): void {
     );
   });
   addSelectionButton.addEventListener('click', () => {
-    void addCurrentSelection(errorBox, errorSection, payload);
+    void addCurrentSelection(errorBox, errorSection, effectivePayload);
   });
   addRectangleButton.addEventListener('click', () => {
-    void addRectangleSelection(errorBox, errorSection, payload);
+    void addRectangleSelection(errorBox, errorSection, effectivePayload);
   });
   for (const removeButton of root.querySelectorAll<HTMLButtonElement>(
     '.session-item-remove'
@@ -278,7 +305,9 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   minimizeButton.addEventListener('click', () => {
     isOverlayMinimized = true;
-    renderOverlay(payload);
+    if (currentOverlayPayload) {
+      renderOverlay(currentOverlayPayload);
+    }
   });
   closeButton.addEventListener('click', () => {
     void closeOverlay();
@@ -762,7 +791,7 @@ function buildBatchHint(maxSessionItems: number, rectangleActive: boolean): stri
     return `The batch is full. Remove an item before adding another one.`;
   }
   if (current === 0) {
-    return 'Add the current text selection or capture an image region to start a reusable batch.';
+    return 'Add the current text selection with Ctrl+Shift+B or capture an image region with Ctrl+Shift+Y to start a reusable batch.';
   }
   return 'Batch items keep their own cached crop preview so later analysis does not depend on live page selection.';
 }
@@ -979,7 +1008,14 @@ function disposeOverlay(): void {
   isOverlayMinimized = false;
   isRectangleModeActive = false;
   isRawResponseExpanded = false;
+  draftModelName = '';
+  draftCustomPrompt = '';
+  currentOverlayPayload = null;
   clearSelectionBatch();
+  if (keyboardHandlerAttached) {
+    window.removeEventListener('keydown', handleOverlayKeyDown, true);
+    keyboardHandlerAttached = false;
+  }
 }
 
 async function closeOverlay(): Promise<void> {
@@ -1019,4 +1055,128 @@ function ensureOverlayRoot(): ShadowRoot {
 
   // Shadow DOM に閉じ込めて、対象ページの CSS と overlay の見た目が干渉しないようにする。
   return host.shadowRoot ?? host.attachShadow({ mode: 'open' });
+}
+
+function ensureKeyboardHandler(): void {
+  if (keyboardHandlerAttached) {
+    return;
+  }
+
+  window.addEventListener('keydown', handleOverlayKeyDown, true);
+  keyboardHandlerAttached = true;
+}
+
+function handleOverlayKeyDown(event: KeyboardEvent): void {
+  const host = document.getElementById(OVERLAY_HOST_ID);
+  const root = host?.shadowRoot;
+  if (!root || !currentOverlayPayload) {
+    return;
+  }
+
+  const isEscapeKey = event.key === 'Escape';
+  if (isEscapeKey && (isRectangleModeActive || isRectangleSelectionActive())) {
+    return;
+  }
+
+  if (isEscapeKey) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.shiftKey) {
+      void closeOverlay();
+      return;
+    }
+
+    if (!isOverlayMinimized) {
+      isOverlayMinimized = true;
+      renderOverlay(currentOverlayPayload);
+    }
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    const customPromptInput = root.querySelector<HTMLTextAreaElement>(
+      '.custom-prompt-input'
+    );
+    const customButton = root.querySelector<HTMLButtonElement>('.action-custom');
+    const errorSection = root.querySelector<HTMLElement>('.error-section');
+    const errorBox = root.querySelector<HTMLElement>('.error-box');
+    if (
+      !customPromptInput ||
+      !customButton ||
+      !errorSection ||
+      !errorBox ||
+      customButton.disabled ||
+      !event.composedPath().includes(customPromptInput)
+    ) {
+      return;
+    }
+
+    const modelInput = root.querySelector<HTMLInputElement>('.model-input');
+    event.preventDefault();
+    event.stopPropagation();
+    void runOverlayAction(
+      'custom_prompt',
+      modelInput?.value ?? '',
+      customPromptInput.value,
+      errorBox,
+      errorSection
+    );
+    return;
+  }
+
+  if (
+    event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    event.key.toLowerCase() === 'r'
+  ) {
+    if (
+      !currentOverlayPayload.sessionReady ||
+      currentOverlayPayload.status === 'loading' ||
+      isEditableTarget(event)
+    ) {
+      return;
+    }
+
+    const errorSection = root.querySelector<HTMLElement>('.error-section');
+    const errorBox = root.querySelector<HTMLElement>('.error-box');
+    if (!errorSection || !errorBox) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    void runOverlayAction(
+      currentOverlayPayload.action ?? 'translation',
+      currentOverlayPayload.modelName ?? '',
+      currentOverlayPayload.customPrompt ?? '',
+      errorBox,
+      errorSection
+    );
+  }
+}
+
+function isEditableTarget(event: KeyboardEvent): boolean {
+  for (const entry of event.composedPath()) {
+    if (!(entry instanceof HTMLElement)) {
+      continue;
+    }
+
+    const tagName = entry.tagName;
+    if (
+      tagName === 'INPUT' ||
+      tagName === 'TEXTAREA' ||
+      tagName === 'SELECT' ||
+      entry.isContentEditable
+    ) {
+      return true;
+    }
+  }
+
+  const activeElement = document.activeElement;
+  return activeElement instanceof HTMLElement
+    ? activeElement.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName)
+    : false;
 }

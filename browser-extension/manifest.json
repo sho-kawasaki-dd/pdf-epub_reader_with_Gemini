@@ -7,6 +7,20 @@
     "default_popup": "index.html"
   },
   "commands": {
+    "gem-read-phase3-open-overlay": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+O",
+        "mac": "Command+Shift+O"
+      },
+      "description": "Reopen the Gem Read overlay"
+    },
+    "gem-read-phase3-add-selection": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+B",
+        "mac": "Command+Shift+B"
+      },
+      "description": "Add the current text selection to the Gem Read batch"
+    },
     "gem-read-phase2-start-rectangle": {
       "suggested_key": {
         "default": "Ctrl+Shift+Y",
