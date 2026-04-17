@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getChromeMock } from '../../mocks/chrome';
 
 const collectSelectionMock = vi.hoisted(() => vi.fn());
+const collectArticleContextMock = vi.hoisted(() => vi.fn());
 const renderOverlayMock = vi.hoisted(() => vi.fn());
 const sendAnalyzeTranslateRequestMock = vi.hoisted(() => vi.fn());
 const cropSelectionImageMock = vi.hoisted(() => vi.fn());
 const loadExtensionSettingsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/background/gateways/tabMessagingGateway', () => ({
+  collectArticleContext: collectArticleContextMock,
   collectSelection: collectSelectionMock,
   renderOverlay: renderOverlayMock,
 }));
@@ -38,6 +40,18 @@ describe('runSelectionAnalysis', () => {
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash'],
+    });
+    collectArticleContextMock.mockResolvedValue({
+      ok: true,
+      payload: {
+        title: 'Example article',
+        url: 'https://example.com/article',
+        bodyText:
+          'Long article context paragraph one. Long article context paragraph two. Long article context paragraph three.',
+        bodyHash: 'abc123def4567890',
+        source: 'readability',
+        textLength: 104,
+      },
     });
   });
 
@@ -99,6 +113,7 @@ describe('runSelectionAnalysis', () => {
       })
     );
     expect(collectSelectionMock).toHaveBeenCalledWith(7, '  fallback text  ');
+    expect(collectArticleContextMock).toHaveBeenCalledWith(7);
     expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledWith(9, {
       format: 'png',
     });
@@ -135,10 +150,68 @@ describe('runSelectionAnalysis', () => {
         ],
         sessionReady: true,
         selectedText: 'fallback text',
+        articleContext: expect.objectContaining({
+          title: 'Example article',
+          bodyHash: 'abc123def4567890',
+        }),
         translatedText: '翻訳結果',
         previewImageUrl: 'data:image/webp;base64,crop',
         imageCount: 1,
         timingMs: 12.5,
+      })
+    );
+  });
+
+  it('keeps the selection flow working when article extraction falls back', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+    collectArticleContextMock.mockResolvedValueOnce({
+      ok: false,
+      error: 'Readable article context could not be extracted on this page.',
+    });
+    collectSelectionMock.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        text: 'selection from content script',
+        rect: { left: 10, top: 20, width: 30, height: 40 },
+        viewportWidth: 1440,
+        viewportHeight: 900,
+        devicePixelRatio: 2,
+        url: 'https://example.com/article',
+        pageTitle: 'Example page',
+      },
+    });
+    cropSelectionImageMock.mockResolvedValueOnce({
+      imageDataUrl: 'data:image/webp;base64,crop',
+      durationMs: 12.5,
+    });
+    sendAnalyzeTranslateRequestMock.mockResolvedValueOnce({
+      ok: true,
+      mode: 'translation',
+      translated_text: '翻訳結果',
+      explanation: null,
+      raw_response: '翻訳結果',
+      used_mock: false,
+      availability: 'live',
+      degraded_reason: null,
+      image_count: 1,
+    });
+
+    await runSelectionAnalysis(
+      { id: 7, windowId: 9 } as chrome.tabs.Tab,
+      'fallback'
+    );
+
+    expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledTimes(1);
+    expect(renderOverlayMock).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        status: 'success',
+        articleContext: undefined,
+        articleContextError:
+          'Readable article context could not be extracted on this page.',
       })
     );
   });

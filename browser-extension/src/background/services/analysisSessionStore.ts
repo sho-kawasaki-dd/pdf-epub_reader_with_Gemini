@@ -1,5 +1,6 @@
 import type {
   AnalysisAction,
+  ArticleContext,
   ModelOption,
   SelectionSessionItem,
 } from '../../shared/contracts/messages';
@@ -10,6 +11,8 @@ export interface SelectionAnalysisSession {
   lastAction: AnalysisAction;
   lastModelName?: string;
   lastCustomPrompt?: string;
+  articleContext?: ArticleContext;
+  articleContextError?: string;
 }
 
 const SESSION_STORAGE_KEY_PREFIX = 'gem-read.analysis-session.';
@@ -74,6 +77,11 @@ function cloneSession(session: SelectionAnalysisSession): SelectionAnalysisSessi
     modelOptions: session.modelOptions.map((modelOption) => ({
       ...modelOption,
     })),
+    articleContext: session.articleContext
+      ? {
+          ...session.articleContext,
+        }
+      : undefined,
   };
 }
 

@@ -12,6 +12,7 @@ import type {
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
 import { sendAnalyzeTranslateRequest } from '../gateways/localApiGateway';
 import {
+  collectArticleContext,
   collectSelection,
   renderOverlay,
 } from '../gateways/tabMessagingGateway';
@@ -66,6 +67,8 @@ export async function runSelectionAnalysis(
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: Boolean(reusableSession),
       selectedText: fallbackSelectionText,
+      articleContext: reusableSession?.articleContext,
+      articleContextError: reusableSession?.articleContextError,
     });
 
     const session = await resolveAnalysisSession(
@@ -100,6 +103,8 @@ export async function runSelectionAnalysis(
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: true,
       selectedText: buildSelectedText(sessionItem),
+      articleContext: session.articleContext,
+      articleContextError: session.articleContextError,
       translatedText: apiResponse.translated_text,
       explanation: apiResponse.explanation,
       previewImageUrl: sessionItem.previewImageUrl,
@@ -124,6 +129,8 @@ export async function runSelectionAnalysis(
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: Boolean(availableSession),
       selectedText: fallbackSelectionText,
+      articleContext: availableSession?.articleContext,
+      articleContextError: availableSession?.articleContextError,
       error: message,
     });
   }
@@ -156,7 +163,16 @@ async function createFreshSession(
   fallbackSelectionText: string,
   modelOptions: ModelOption[]
 ): Promise<SelectionAnalysisSession> {
-  const selection = await collectSelection(tabId, fallbackSelectionText);
+  const [selection, articleContextResult] = await Promise.all([
+    collectSelection(tabId, fallbackSelectionText),
+    collectArticleContext(tabId).catch((error) => ({
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Article context extraction failed.',
+    })),
+  ]);
   if (!selection.ok || !selection.payload) {
     throw new Error(selection.error ?? '選択テキストを取得できませんでした。');
   }
@@ -189,6 +205,12 @@ async function createFreshSession(
     ],
     modelOptions,
     lastAction: 'translation',
+    articleContext: articleContextResult.ok
+      ? articleContextResult.payload
+      : undefined,
+    articleContextError: articleContextResult.ok
+      ? undefined
+      : articleContextResult.error,
   };
   await setAnalysisSession(tabId, session);
   return session;

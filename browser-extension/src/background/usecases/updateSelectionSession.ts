@@ -61,6 +61,8 @@ export async function appendSelectionSessionItem(
     lastModelName:
       existingSession?.lastModelName || settings.defaultModel || undefined,
     lastCustomPrompt: existingSession?.lastCustomPrompt,
+    articleContext: existingSession?.articleContext,
+    articleContextError: existingSession?.articleContextError,
   };
 
   await setAnalysisSession(tabId, nextSession);
@@ -215,6 +217,8 @@ export function buildOverlayPayload(
     launcherOnly: options.launcherOnly,
     preserveDrafts: options.preserveDrafts,
     selectedText: buildSelectedText(latestItem),
+    articleContext: session.articleContext,
+    articleContextError: session.articleContextError,
     previewImageUrl: latestItem?.previewImageUrl,
     timingMs: latestItem?.cropDurationMs,
     error: options.error,

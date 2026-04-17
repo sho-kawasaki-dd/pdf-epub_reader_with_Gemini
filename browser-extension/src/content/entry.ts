@@ -10,6 +10,7 @@ import type {
   SeedOverlaySessionResponse,
 } from '../shared/contracts/messages';
 import { renderOverlay } from './overlay/renderOverlay';
+import { collectArticleContext } from './selection/articleContext';
 import {
   startRectangleSelection,
 } from './selection/rectangleSelectionController';
@@ -41,6 +42,11 @@ export function registerContentRuntime(): void {
             liveOnly: message.liveOnly,
           })
         );
+        return false;
+      }
+
+      if (message.type === 'phase4.collectArticleContext') {
+        sendResponse(collectArticleContext());
         return false;
       }
 

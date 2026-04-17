@@ -1,4 +1,6 @@
 import type {
+  ArticleContextResponse,
+  CollectArticleContextMessage,
   CollectSelectionMessage,
   ContentScriptMessage,
   OverlayPayload,
@@ -21,6 +23,15 @@ export async function collectSelection(
     liveOnly: options.liveOnly,
   };
   return chrome.tabs.sendMessage(tabId, message);
+}
+
+export async function collectArticleContext(
+  tabId: number,
+): Promise<ArticleContextResponse> {
+  const message: CollectArticleContextMessage = {
+    type: 'phase4.collectArticleContext',
+  };
+  return chrome.tabs.sendMessage(tabId, message as ContentScriptMessage);
 }
 
 export async function renderOverlay(tabId: number, payload: OverlayPayload): Promise<void> {

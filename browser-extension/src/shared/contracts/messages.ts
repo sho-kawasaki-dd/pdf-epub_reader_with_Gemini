@@ -45,6 +45,26 @@ export interface SelectionCaptureResponse {
   error?: string;
 }
 
+export type ArticleContextSource = 'readability' | 'dom-fallback';
+
+export interface ArticleContext {
+  title: string;
+  url: string;
+  bodyText: string;
+  bodyHash: string;
+  source: ArticleContextSource;
+  textLength: number;
+  excerpt?: string;
+  byline?: string;
+  siteName?: string;
+}
+
+export interface ArticleContextResponse {
+  ok: boolean;
+  payload?: ArticleContext;
+  error?: string;
+}
+
 export interface AnalyzeApiResponse {
   ok: boolean;
   mode: AnalysisAction;
@@ -115,6 +135,8 @@ export interface OverlayPayload {
   launcherOnly?: boolean;
   preserveDrafts?: boolean;
   selectedText?: string;
+  articleContext?: ArticleContext;
+  articleContextError?: string;
   translatedText?: string;
   explanation?: string | null;
   previewImageUrl?: string;
@@ -140,6 +162,10 @@ export interface CollectSelectionMessage {
 export interface RenderOverlayMessage {
   type: 'phase0.renderOverlay';
   payload: OverlayPayload;
+}
+
+export interface CollectArticleContextMessage {
+  type: 'phase4.collectArticleContext';
 }
 
 export interface SeedOverlaySessionPayload {
@@ -285,6 +311,7 @@ export interface OpenOverlayResponse {
 
 export type ContentScriptMessage =
   | CollectSelectionMessage
+  | CollectArticleContextMessage
   | RenderOverlayMessage
   | SeedOverlaySessionMessage
   | InvokeOverlayActionMessage
