@@ -46,9 +46,10 @@ def _build_command(
     model_name: str | None = None,
     images: list[str] | None = None,
     custom_prompt: str | None = None,
+    text: str = "Selected text",
 ):
     return AnalyzeTranslateCommand(
-        text="Selected text",
+        text=text,
         model_name=model_name,
         images=images or [],
         mode=mode,
@@ -135,6 +136,28 @@ class TestAnalyzeService:
         assert request.custom_prompt == "Summarize this"
 
     @pytest.mark.asyncio
+    async def test_accepts_image_only_requests_without_mutating_empty_text(self) -> None:
+        image_bytes = b"image-payload"
+        image_payload = f"data:image/png;base64,{base64.b64encode(image_bytes).decode()}"
+        gateway = StubAIGateway(
+            result=AnalysisResult(raw_response="image answer"),
+            requests=[],
+        )
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.analyze_translate(
+            _build_command(text="", images=[image_payload])
+        )
+
+        assert result.raw_response == "image answer"
+        request = gateway.requests[0]
+        assert request.text == ""
+        assert request.images == [image_bytes]
+
+    @pytest.mark.asyncio
     async def test_falls_back_to_mock_when_api_key_is_missing(self) -> None:
         gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
         service = AnalyzeService(
@@ -168,6 +191,19 @@ class TestAnalyzeService:
         assert result.availability == "mock"
         assert result.degraded_reason == "mock-response"
         assert "Prompt: Summarize" in result.raw_response
+
+    @pytest.mark.asyncio
+    async def test_image_only_mock_response_uses_placeholder_text(self) -> None:
+        gateway = StubAIGateway(error=AIKeyMissingError("missing key"), requests=[])
+        service = AnalyzeService(
+            ai_gateway=gateway,
+            config=AppConfig(gemini_model_name="default-model"),
+        )
+
+        result = await service.analyze_translate(_build_command(text="", images=["abc="]))
+
+        assert result.used_mock is True
+        assert "[image-only selection]" in result.raw_response
 
     @pytest.mark.asyncio
     async def test_raises_missing_model_when_request_and_config_are_empty(self) -> None:

@@ -19,6 +19,7 @@ from pdf_epub_reader.utils.config import AppConfig
 from pdf_epub_reader.utils.exceptions import AIAPIError, AIKeyMissingError
 
 logger = logging.getLogger(__name__)
+_IMAGE_ONLY_PLACEHOLDER = "[image-only selection]"
 
 
 @dataclass(slots=True)
@@ -170,8 +171,10 @@ class AnalyzeService:
     ) -> AnalyzeTranslateResult:
         """Return a deterministic mock payload so UI and transport can be validated without Gemini credentials."""
 
+        display_text = command.text.strip() or _IMAGE_ONLY_PLACEHOLDER
+
         if command.mode == "custom_prompt":
-            translated_text = f"[mock: custom_prompt] {command.text}"
+            translated_text = f"[mock: custom_prompt] {display_text}"
             raw_response = (
                 f"{translated_text}\n\n---\n\nPrompt: {command.custom_prompt or '(empty)'}"
             )
@@ -182,7 +185,7 @@ class AnalyzeService:
                 if command.mode == "translation_with_explanation"
                 else "[mock: translation]"
             )
-            translated_text = f"{prefix} {command.text}"
+            translated_text = f"{prefix} {display_text}"
             explanation = None
             raw_response = translated_text
             if command.mode == "translation_with_explanation":

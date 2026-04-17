@@ -16,7 +16,7 @@ function createJsonResponse(payload: unknown, status: number = 200): Response {
 
 // gateway が HTTP payload と degraded fallback をどう正規化するかを固定する suite。
 describe('localApiGateway', () => {
-  it('sends analyze requests with action, model, and custom prompt options', async () => {
+  it('sends batch analyze requests with numbered text, sparse images, and ordered metadata', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       createJsonResponse({
         ok: true,
@@ -36,16 +36,53 @@ describe('localApiGateway', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await sendAnalyzeTranslateRequest(
-      {
-        text: 'Selected paragraph',
-        rect: { left: 1, top: 2, width: 3, height: 4 },
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        devicePixelRatio: 2,
-        url: 'https://example.com/article',
-        pageTitle: 'Example page',
-      },
-      'data:image/webp;base64,preview',
+      [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,preview-1',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 1280,
+            viewportHeight: 720,
+            devicePixelRatio: 2,
+            url: 'https://example.com/article',
+            pageTitle: 'Example page',
+          },
+        },
+        {
+          id: 'selection-2',
+          source: 'free-rectangle',
+          includeImage: true,
+          previewImageUrl: 'data:image/webp;base64,preview-2',
+          selection: {
+            text: '',
+            rect: { left: 11, top: 12, width: 13, height: 14 },
+            viewportWidth: 1280,
+            viewportHeight: 720,
+            devicePixelRatio: 2,
+            url: 'https://example.com/article',
+            pageTitle: 'Example page',
+          },
+        },
+        {
+          id: 'selection-3',
+          source: 'text-selection',
+          includeImage: true,
+          previewImageUrl: 'data:image/webp;base64,preview-3',
+          selection: {
+            text: 'Second paragraph',
+            rect: { left: 21, top: 22, width: 23, height: 24 },
+            viewportWidth: 1280,
+            viewportHeight: 720,
+            devicePixelRatio: 2,
+            url: 'https://example.com/article',
+            pageTitle: 'Example page',
+          },
+        },
+      ],
       {
         action: 'custom_prompt',
         apiBaseUrl: 'http://127.0.0.1:9000',
@@ -63,11 +100,44 @@ describe('localApiGateway', () => {
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
       {
-        text: 'Selected paragraph',
+        text: '1. Selected paragraph\n\n2. Second paragraph',
         mode: 'custom_prompt',
         model_name: 'gemini-2.5-pro',
         custom_prompt: 'Summarize this',
-        images: ['data:image/webp;base64,preview'],
+        images: [
+          'data:image/webp;base64,preview-2',
+          'data:image/webp;base64,preview-3',
+        ],
+        selection_metadata: {
+          url: 'https://example.com/article',
+          page_title: 'Example page',
+          items: [
+            {
+              id: 'selection-1',
+              order: 0,
+              source: 'text-selection',
+              text: 'Selected paragraph',
+              include_image: false,
+              image_index: null,
+            },
+            {
+              id: 'selection-2',
+              order: 1,
+              source: 'free-rectangle',
+              text: '',
+              include_image: true,
+              image_index: 0,
+            },
+            {
+              id: 'selection-3',
+              order: 2,
+              source: 'text-selection',
+              text: 'Second paragraph',
+              include_image: true,
+              image_index: 1,
+            },
+          ],
+        },
       }
     );
     expect(result).toMatchObject({

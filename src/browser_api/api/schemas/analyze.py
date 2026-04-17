@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from browser_api.application.dto import (
+    AnalyzeSelectionMetadata,
     AnalyzeTranslateCommand,
     AnalyzeTranslateResult,
     ModelCatalogResult,
@@ -31,15 +32,32 @@ class SelectionMetadataPayload(BaseModel):
     rect: SelectionRectPayload | None = None
 
 
+class SelectionMetadataItemPayload(SelectionMetadataPayload):
+    """Per-item batch metadata for reconstructing ordering and sparse image inclusion."""
+
+    id: str | None = None
+    order: int | None = None
+    source: Literal["text-selection", "free-rectangle"] | None = None
+    text: str | None = None
+    include_image: bool | None = None
+    image_index: int | None = None
+
+
+class AnalyzeSelectionMetadataPayload(SelectionMetadataPayload):
+    """Top-level selection metadata plus optional ordered batch item entries."""
+
+    items: list[SelectionMetadataItemPayload] = Field(default_factory=list)
+
+
 class AnalyzeTranslateRequest(BaseModel):
     """HTTP schema accepted from the browser extension."""
 
-    text: str = Field(min_length=1)
+    text: str = ''
     model_name: str | None = None
     images: list[str] = Field(default_factory=list)
     mode: Literal["translation", "translation_with_explanation", "custom_prompt"] = "translation"
     custom_prompt: str | None = None
-    selection_metadata: SelectionMetadataPayload | None = None
+    selection_metadata: AnalyzeSelectionMetadataPayload | None = None
 
     @model_validator(mode="after")
     def validate_custom_prompt(self) -> "AnalyzeTranslateRequest":
@@ -47,14 +65,20 @@ class AnalyzeTranslateRequest(BaseModel):
 
         if self.mode == "custom_prompt" and not (self.custom_prompt and self.custom_prompt.strip()):
             raise ValueError("custom_prompt is required when mode=custom_prompt")
+        if not self.text.strip() and len(self.images) == 0:
+            raise ValueError(
+                "At least one of non-empty text or one-or-more images is required"
+            )
         return self
 
     def to_command(self) -> AnalyzeTranslateCommand:
         """Convert the transport schema into the application command used by AnalyzeService."""
 
-        selection_metadata: dict[str, Any] | None = None
+        selection_metadata: AnalyzeSelectionMetadata | None = None
         if self.selection_metadata is not None:
-            selection_metadata = self.selection_metadata.model_dump(mode="json")
+            selection_metadata = self.selection_metadata.model_dump(
+                mode="json", exclude_none=True
+            )
 
         return AnalyzeTranslateCommand(
             text=self.text,

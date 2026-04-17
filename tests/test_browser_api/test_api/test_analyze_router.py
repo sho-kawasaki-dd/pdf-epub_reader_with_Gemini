@@ -58,6 +58,35 @@ def test_translate_accepts_custom_prompt_mode(api_client, stub_analyze_service) 
     assert command.custom_prompt == "Summarize this"
 
 
+def test_translate_accepts_image_only_requests(api_client, stub_analyze_service) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "",
+            "images": ["data:image/png;base64,QUJD"],
+            "mode": "translation",
+            "selection_metadata": {
+                "items": [
+                    {
+                        "id": "selection-1",
+                        "order": 0,
+                        "source": "free-rectangle",
+                        "text": "",
+                        "include_image": True,
+                        "image_index": 0,
+                    }
+                ]
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    command = stub_analyze_service.calls[0]
+    assert command.text == ""
+    assert command.images == ["data:image/png;base64,QUJD"]
+    assert command.selection_metadata["items"][0]["source"] == "free-rectangle"
+
+
 def test_translate_rejects_custom_prompt_mode_without_prompt(api_client) -> None:
     response = api_client.post(
         "/analyze/translate",
@@ -129,3 +158,41 @@ def test_translate_rejects_empty_text(api_client, stub_analyze_service) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_translate_serializes_batch_metadata(api_client, stub_analyze_service) -> None:
+    response = api_client.post(
+        "/analyze/translate",
+        json={
+            "text": "1. First\n\n2. Second",
+            "images": ["data:image/png;base64,QUJD"],
+            "mode": "translation_with_explanation",
+            "selection_metadata": {
+                "url": "https://example.com",
+                "page_title": "Example",
+                "items": [
+                    {
+                        "id": "selection-1",
+                        "order": 0,
+                        "source": "text-selection",
+                        "text": "First",
+                        "include_image": False,
+                        "image_index": None,
+                    },
+                    {
+                        "id": "selection-2",
+                        "order": 1,
+                        "source": "free-rectangle",
+                        "text": "Second",
+                        "include_image": True,
+                        "image_index": 0,
+                    },
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    command = stub_analyze_service.calls[0]
+    assert command.selection_metadata["items"][1]["image_index"] == 0
+    assert command.selection_metadata["page_title"] == "Example"

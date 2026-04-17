@@ -8,8 +8,44 @@ import type {
   ModelOption,
   PopupConnectionStatus,
   PopupStatusPayload,
-  SelectionCapturePayload,
+  SelectionRect,
+  SelectionSessionItem,
+  SelectionSessionSource,
 } from '../contracts/messages';
+
+interface AnalyzeSelectionMetadataItem {
+  id: string;
+  order: number;
+  source: SelectionSessionSource;
+  text: string;
+  include_image: boolean;
+  image_index: number | null;
+  url: string;
+  page_title: string;
+  viewport_width: number;
+  viewport_height: number;
+  device_pixel_ratio: number;
+  rect: SelectionRect;
+}
+
+interface AnalyzeSelectionMetadataPayload {
+  url?: string;
+  page_title?: string;
+  viewport_width?: number;
+  viewport_height?: number;
+  device_pixel_ratio?: number;
+  rect?: SelectionRect;
+  items?: AnalyzeSelectionMetadataItem[];
+}
+
+interface AnalyzeTranslateRequestBody {
+  text: string;
+  images: string[];
+  mode: AnalysisAction;
+  model_name?: string;
+  custom_prompt?: string;
+  selection_metadata?: AnalyzeSelectionMetadataPayload;
+}
 
 interface RawAnalyzeApiResponse {
   ok: boolean;
@@ -59,33 +95,23 @@ export interface PopupBootstrapResult {
  * Content script は CSP の影響を受けやすいため、Local API 通信の詳細は shared gateway に寄せる。
  */
 export async function sendAnalyzeTranslateRequest(
-  selection: SelectionCapturePayload,
-  imageDataUrl: string,
+  sessionItems: SelectionSessionItem[],
   options: SendAnalyzeRequestOptions = {}
 ): Promise<AnalyzeApiResponse> {
   const apiBaseUrl = options.apiBaseUrl ?? PHASE0_API_BASE_URL;
   const action = options.action ?? 'translation';
+  const requestBody = buildAnalyzeRequestBody(sessionItems, {
+    action,
+    modelName: options.modelName,
+    customPrompt: options.customPrompt,
+  });
+
   const response = await fetch(`${apiBaseUrl}/analyze/translate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      text: selection.text,
-      // Phase 1 では crop 済み preview をそのまま 1 枚送る。複数画像対応は後続 phase で拡張する。
-      images: [imageDataUrl],
-      mode: action,
-      model_name: options.modelName,
-      custom_prompt: options.customPrompt,
-      selection_metadata: {
-        url: selection.url,
-        page_title: selection.pageTitle,
-        viewport_width: selection.viewportWidth,
-        viewport_height: selection.viewportHeight,
-        device_pixel_ratio: selection.devicePixelRatio,
-        rect: selection.rect,
-      },
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -107,6 +133,63 @@ export async function sendAnalyzeTranslateRequest(
     availability: payload.availability,
     degraded_reason: payload.degraded_reason,
     selection_metadata: payload.selection_metadata,
+  };
+}
+
+function buildAnalyzeRequestBody(
+  sessionItems: SelectionSessionItem[],
+  options: Pick<SendAnalyzeRequestOptions, 'action' | 'modelName' | 'customPrompt'>
+): AnalyzeTranslateRequestBody {
+  if (sessionItems.length === 0) {
+    throw new Error('At least one session item is required before running analysis.');
+  }
+
+  const images: string[] = [];
+  const metadataItems = sessionItems.map((item, order) => {
+    const shouldIncludeImage = item.includeImage && Boolean(item.previewImageUrl);
+    const imageIndex = shouldIncludeImage
+      ? images.push(item.previewImageUrl as string) - 1
+      : null;
+
+    return {
+      id: item.id,
+      order,
+      source: item.source,
+      text: item.selection.text.trim(),
+      include_image: item.includeImage,
+      image_index: imageIndex,
+      url: item.selection.url,
+      page_title: item.selection.pageTitle,
+      viewport_width: item.selection.viewportWidth,
+      viewport_height: item.selection.viewportHeight,
+      device_pixel_ratio: item.selection.devicePixelRatio,
+      rect: { ...item.selection.rect },
+    } satisfies AnalyzeSelectionMetadataItem;
+  });
+
+  const text = metadataItems
+    .filter((item) => item.text.length > 0)
+    .map((item, index) => `${index + 1}. ${item.text}`)
+    .join('\n\n');
+  const primarySelection = sessionItems[0]?.selection;
+
+  return {
+    text,
+    images,
+    mode: options.action ?? 'translation',
+    model_name: options.modelName,
+    custom_prompt: options.customPrompt,
+    selection_metadata: primarySelection
+      ? {
+          url: primarySelection.url,
+          page_title: primarySelection.pageTitle,
+          viewport_width: primarySelection.viewportWidth,
+          viewport_height: primarySelection.viewportHeight,
+          device_pixel_ratio: primarySelection.devicePixelRatio,
+          rect: { ...primarySelection.rect },
+          items: metadataItems,
+        }
+      : { items: metadataItems },
   };
 }
 

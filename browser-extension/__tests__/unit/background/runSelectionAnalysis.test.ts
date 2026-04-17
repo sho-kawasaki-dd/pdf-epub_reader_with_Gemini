@@ -107,8 +107,13 @@ describe('runSelectionAnalysis', () => {
       expect.objectContaining({ text: 'fallback text' })
     );
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'fallback text' }),
-      'data:image/webp;base64,crop',
+      [
+        expect.objectContaining({
+          selection: expect.objectContaining({ text: 'fallback text' }),
+          previewImageUrl: 'data:image/webp;base64,crop',
+          includeImage: false,
+        }),
+      ],
       {
         action: 'translation',
         apiBaseUrl: 'http://127.0.0.1:9000',
@@ -183,8 +188,12 @@ describe('runSelectionAnalysis', () => {
     );
 
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'fallback' }),
-      'data:image/webp;base64,crop',
+      [
+        expect.objectContaining({
+          selection: expect.objectContaining({ text: 'fallback' }),
+          previewImageUrl: 'data:image/webp;base64,crop',
+        }),
+      ],
       {
         action: 'custom_prompt',
         apiBaseUrl: 'http://localhost:9010',
@@ -309,9 +318,32 @@ describe('runSelectionAnalysis', () => {
     expect(cropSelectionImageMock).toHaveBeenCalledTimes(1);
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ text: 'fallback' }),
-      'data:image/webp;base64,crop',
+      [
+        expect.objectContaining({
+          selection: expect.objectContaining({ text: 'fallback' }),
+          previewImageUrl: 'data:image/webp;base64,crop',
+        }),
+      ],
       expect.objectContaining({ action: 'translation_with_explanation' })
+    );
+  });
+
+  it('does not recollect selection when rerun is requested without a cached session', async () => {
+    await runSelectionAnalysis({ id: 7, windowId: 9 } as chrome.tabs.Tab, '', {
+      action: 'translation_with_explanation',
+      reuseCachedSession: true,
+    });
+
+    expect(collectSelectionMock).not.toHaveBeenCalled();
+    expect(sendAnalyzeTranslateRequestMock).not.toHaveBeenCalled();
+    expect(renderOverlayMock).toHaveBeenLastCalledWith(
+      7,
+      expect.objectContaining({
+        status: 'error',
+        action: 'translation_with_explanation',
+        error:
+          '解析セッションが見つかりません。新しい選択を追加してから再実行してください。',
+      })
     );
   });
 
@@ -354,8 +386,7 @@ describe('runSelectionAnalysis', () => {
     );
 
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      'data:image/webp;base64,crop',
+      [expect.any(Object)],
       expect.objectContaining({ action: 'translation' })
     );
   });

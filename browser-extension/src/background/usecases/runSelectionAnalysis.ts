@@ -7,6 +7,7 @@ import type {
   AnalyzeRequestOptions,
   ModelOption,
   SelectionCapturePayload,
+  SelectionSessionItem,
 } from '../../shared/contracts/messages';
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
 import { sendAnalyzeTranslateRequest } from '../gateways/localApiGateway';
@@ -50,9 +51,8 @@ export async function runSelectionAnalysis(
     options
   );
   const modelOptions = buildModelOptions(settings);
-  const cachedSession = options.reuseCachedSession
-    ? getCachedSession(tabId)
-    : undefined;
+  const cachedSession = getCachedSession(tabId);
+  const reusableSession = options.reuseCachedSession ? cachedSession : undefined;
 
   try {
     // loading を先に描画して、selection 取得や crop の待ち時間でも UI 上の文脈を保つ。
@@ -61,27 +61,24 @@ export async function runSelectionAnalysis(
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
-      sessionItems: cachedSession?.items,
+      sessionItems: reusableSession?.items,
       maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
-      sessionReady: Boolean(cachedSession),
+      sessionReady: Boolean(reusableSession),
       selectedText: fallbackSelectionText,
     });
 
-    // overlay からの再実行では captureVisibleTab をやり直さず、直前 session をそのまま再利用する。
-    const session =
-      cachedSession ??
-      (await createFreshSession(
-        tab,
-        tabId,
-        fallbackSelectionText,
-        modelOptions
-      ));
+    const session = await resolveAnalysisSession(
+      tab,
+      tabId,
+      fallbackSelectionText,
+      modelOptions,
+      options.reuseCachedSession === true
+    );
     const sessionItem = getRequiredSessionItem(session);
 
     const apiResponse = await sendAnalyzeTranslateRequest(
-      sessionItem.selection,
-      sessionItem.previewImageUrl ?? '',
+      session.items,
       resolvedRequestOptions
     );
 
@@ -102,7 +99,7 @@ export async function runSelectionAnalysis(
       maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
       sessionReady: true,
-      selectedText: sessionItem.selection.text,
+      selectedText: buildSelectedText(sessionItem),
       translatedText: apiResponse.translated_text,
       explanation: apiResponse.explanation,
       previewImageUrl: sessionItem.previewImageUrl,
@@ -121,14 +118,35 @@ export async function runSelectionAnalysis(
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
-      sessionItems: cachedSession?.items ?? getCachedSession(tabId)?.items,
+      sessionItems: reusableSession?.items ?? getCachedSession(tabId)?.items,
       maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
-      sessionReady: Boolean(cachedSession || getCachedSession(tabId)),
+      sessionReady: Boolean(reusableSession || getCachedSession(tabId)),
       selectedText: fallbackSelectionText,
       error: message,
     });
   }
+}
+
+async function resolveAnalysisSession(
+  tab: chrome.tabs.Tab,
+  tabId: number,
+  fallbackSelectionText: string,
+  modelOptions: ModelOption[],
+  reuseCachedSession: boolean
+): Promise<SelectionAnalysisSession> {
+  if (reuseCachedSession) {
+    const session = getCachedSession(tabId);
+    if (session?.items.length) {
+      return session;
+    }
+
+    throw new Error(
+      '解析セッションが見つかりません。新しい選択を追加してから再実行してください。'
+    );
+  }
+
+  return createFreshSession(tab, tabId, fallbackSelectionText, modelOptions);
 }
 
 async function createFreshSession(
@@ -183,7 +201,13 @@ function getCachedSession(tabId: number): SelectionAnalysisSession | undefined {
 
   return {
     ...session,
-    items: session.items.map((item) => ({ ...item })),
+    items: session.items.map((item) => ({
+      ...item,
+      selection: {
+        ...item.selection,
+        rect: { ...item.selection.rect },
+      },
+    })),
     // 呼び出し側が候補配列を書き換えても store 本体を汚染しないよう参照を切る。
     modelOptions: [...session.modelOptions],
   };
@@ -199,6 +223,10 @@ function getRequiredSessionItem(session: SelectionAnalysisSession) {
 
 function createSessionItemId(): string {
   return `selection-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildSelectedText(item: SelectionSessionItem): string {
+  return item.selection.text || '[Image region only]';
 }
 
 function buildModelOptions(settings: ExtensionSettings): ModelOption[] {
