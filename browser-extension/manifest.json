@@ -9,15 +9,15 @@
   "commands": {
     "gem-read-phase3-open-overlay": {
       "suggested_key": {
-        "default": "Ctrl+Shift+O",
-        "mac": "Command+Shift+O"
+        "default": "Ctrl+Shift+8",
+        "mac": "Command+Shift+8"
       },
       "description": "Reopen the Gem Read overlay"
     },
     "gem-read-phase3-add-selection": {
       "suggested_key": {
-        "default": "Ctrl+Shift+B",
-        "mac": "Command+Shift+B"
+        "default": "Ctrl+Shift+9",
+        "mac": "Command+Shift+9"
       },
       "description": "Add the current text selection to the Gem Read batch"
     },

@@ -791,7 +791,7 @@ function buildBatchHint(maxSessionItems: number, rectangleActive: boolean): stri
     return `The batch is full. Remove an item before adding another one.`;
   }
   if (current === 0) {
-    return 'Add the current text selection with Ctrl+Shift+B or capture an image region with Ctrl+Shift+Y to start a reusable batch.';
+    return 'Add the current text selection with Ctrl+Shift+9 or capture an image region with Ctrl+Shift+Y to start a reusable batch.';
   }
   return 'Batch items keep their own cached crop preview so later analysis does not depend on live page selection.';
 }

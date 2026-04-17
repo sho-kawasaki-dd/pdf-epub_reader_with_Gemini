@@ -106,10 +106,10 @@ These workflows are intentionally split so branch protection can require each ga
 - Start `uv run python -m browser_api` before opening the extension popup.
 - In the popup, confirm `Reachable`, `Mock Mode`, or `Unreachable` matches the local API state.
 - With `GEMINI_API_KEY` unset, confirm popup can still reach the API and the overlay shows explicit mock-mode text.
-- On a regular http or https page, select text and confirm `Ctrl+Shift+O` reopens the cached overlay panel.
-- With no cached session, confirm `Ctrl+Shift+O` shows the launcher-only overlay instead of a full panel.
-- With a live text selection active, confirm `Ctrl+Shift+B` appends only the current live selection to the batch.
-- With no live text selection active, confirm `Ctrl+Shift+B` renders an explicit overlay error instead of failing silently.
+- On a regular http or https page, select text and confirm `Ctrl+Shift+8` reopens the cached overlay panel.
+- With no cached session, confirm `Ctrl+Shift+8` shows the launcher-only overlay instead of a full panel.
+- With a live text selection active, confirm `Ctrl+Shift+9` appends only the current live selection to the batch.
+- With no live text selection active, confirm `Ctrl+Shift+9` renders an explicit overlay error instead of failing silently.
 - Confirm `Ctrl+Shift+Y` starts rectangle capture and `Esc` still cancels rectangle mode without minimizing the overlay.
 - Confirm `Esc` minimizes the overlay, `Shift+Esc` closes it and clears the tab session, `Alt+R` reruns the last action, and `Ctrl+Enter` submits the custom prompt only while the textarea is focused.
 - Confirm the popup `Open Overlay On Active Tab` button triggers the same reopen flow as the browser command.

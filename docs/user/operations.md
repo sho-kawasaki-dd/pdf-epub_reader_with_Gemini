@@ -63,10 +63,10 @@ Badge meanings:
 
 Available entry points:
 
-- Browser command `Ctrl+Shift+O`: reopen the overlay for the current tab
-- Browser command `Ctrl+Shift+B`: append the current live text selection to the batch
+- Browser command `Ctrl+Shift+8`: reopen the overlay for the current tab
+- Browser command `Ctrl+Shift+9`: append the current live text selection to the batch
 - Browser command `Ctrl+Shift+Y`: start free-rectangle capture
-- Popup button `Open Overlay On Active Tab`: helper entry point that uses the same reopen flow as `Ctrl+Shift+O`
+- Popup button `Open Overlay On Active Tab`: helper entry point that uses the same reopen flow as `Ctrl+Shift+8`
 
 1. In the overlay, inspect the crop preview, batch list, and latest result.
 1. If you want a different action without reselection, use one of the overlay actions:
@@ -100,4 +100,4 @@ Current limitations:
 - Reload or browser-restart session restore
 - Restricted pages such as browser internal pages, extension pages, and other URLs where content scripts cannot be injected
 
-For `Ctrl+Shift+B`, Gem Read uses only the current live text selection. It does not reuse the last rectangle capture or the previous batch item when no live selection is active.
+For `Ctrl+Shift+9`, Gem Read uses only the current live text selection. It does not reuse the last rectangle capture or the previous batch item when no live selection is active.
