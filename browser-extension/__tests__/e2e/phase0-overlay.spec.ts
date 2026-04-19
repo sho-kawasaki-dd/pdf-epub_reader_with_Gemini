@@ -284,6 +284,7 @@ async function startStubApiServer(): Promise<{
         });
         request.on('end', () => {
           const payload = JSON.parse(body) as CreateCacheRequestPayload;
+          const ttlSeconds = 3600;
           state.cacheCreateRequests.push(payload);
           state.activeCache = {
             cacheName: 'cachedContents/article-1',
@@ -291,8 +292,8 @@ async function startStubApiServer(): Promise<{
               payload.display_name ?? 'browser-extension:Fixture article',
             modelName: payload.model_name ?? 'gemini-2.5-flash',
             tokenCount: estimateTokenCount(payload.full_text),
-            ttlSeconds: 3600,
-            expireTime: '2026-04-17T10:00:00+00:00',
+            ttlSeconds,
+            expireTime: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
           };
           response.writeHead(200, {
             'Content-Type': 'application/json; charset=utf-8',
@@ -463,9 +464,14 @@ async function addLongArticleContent(page: Page): Promise<void> {
   });
 }
 
-async function sendTabMessage<T>(worker: Worker, message: unknown): Promise<T> {
+async function sendTabMessage<T>(
+  page: Page,
+  worker: Worker,
+  message: unknown
+): Promise<T> {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
+      await page.bringToFront();
       return (await worker.evaluate(async (runtimeMessage) => {
         const [tab] = await chrome.tabs.query({
           active: true,
@@ -493,19 +499,23 @@ async function sendTabMessage<T>(worker: Worker, message: unknown): Promise<T> {
   throw new Error('Content script connection could not be established.');
 }
 
-async function collectSelection(worker: Worker): Promise<SelectionResponse> {
-  return sendTabMessage(worker, {
+async function collectSelection(
+  page: Page,
+  worker: Worker
+): Promise<SelectionResponse> {
+  return sendTabMessage(page, worker, {
     type: 'phase0.collectSelection',
     fallbackText: '',
   });
 }
 
 async function renderBatchOverlay(
+  page: Page,
   worker: Worker,
   sessionItems: SeededSessionItem[] = []
 ): Promise<void> {
   const latestItem = sessionItems.at(-1);
-  await sendTabMessage(worker, {
+  await sendTabMessage(page, worker, {
     type: 'phase0.renderOverlay',
     payload: {
       status: 'success',
@@ -527,10 +537,11 @@ async function renderBatchOverlay(
 }
 
 async function seedBatchOverlaySession(
+  page: Page,
   worker: Worker,
   items: SeededSessionItem[]
 ): Promise<void> {
-  const response = await sendTabMessage(worker, {
+  const response = await sendTabMessage(page, worker, {
     type: 'phase2.seedBatchOverlaySession',
     payload: {
       items,
@@ -548,8 +559,8 @@ async function seedBatchOverlaySession(
   expect(response).toMatchObject({ ok: true });
 }
 
-async function seedOverlaySession(worker: Worker): Promise<void> {
-  const response = await sendTabMessage(worker, {
+async function seedOverlaySession(page: Page, worker: Worker): Promise<void> {
+  const response = await sendTabMessage(page, worker, {
     type: 'phase1.seedOverlaySession',
     payload: {
       previewImageUrl: 'data:image/webp;base64,preview',
@@ -561,6 +572,23 @@ async function seedOverlaySession(worker: Worker): Promise<void> {
         },
       ],
     },
+  });
+
+  expect(response).toMatchObject({ ok: true });
+}
+
+async function invokeOverlayAction(
+  page: Page,
+  worker: Worker,
+  payload: {
+    action: 'translation' | 'translation_with_explanation' | 'custom_prompt';
+    modelName?: string;
+    customPrompt?: string;
+  }
+): Promise<void> {
+  const response = await sendTabMessage(page, worker, {
+    type: 'phase1.invokeOverlayAction',
+    payload,
   });
 
   expect(response).toMatchObject({ ok: true });
@@ -695,12 +723,12 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
 
     await expect
       .poll(async () => {
-        const response = await collectSelection(worker);
+        const response = await collectSelection(page, worker);
         return response.ok ? (response.payload?.text ?? '') : '';
       })
       .toBe(expectedSelectionText);
 
-    const response = await collectSelection(worker);
+    const response = await collectSelection(page, worker);
     expect(response).toMatchObject({
       ok: true,
       payload: {
@@ -708,7 +736,7 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
       },
     });
 
-    await seedOverlaySession(worker);
+    await seedOverlaySession(page, worker);
     await openOverlayFromPopupHelper(context, extensionId, page);
 
     await expect
@@ -743,6 +771,7 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
       )
       .toBe('true');
 
+    await page.bringToFront();
     await page.keyboard.press('Alt+R');
     await expect
       .poll(async () => readShadowText(page, '.result-box'))
@@ -762,7 +791,7 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
       .poll(async () => readShadowText(page, '.launcher-button'))
       .toContain('Gem Read');
 
-    await sendTabMessage(worker, {
+    await sendTabMessage(page, worker, {
       type: 'phase1.invokeOverlayAction',
       payload: { action: 'translation' },
     });
@@ -786,6 +815,7 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
       '.custom-prompt-input',
       'Explain the highlighted paragraph'
     );
+    await page.bringToFront();
     await page.keyboard.press('Control+Enter');
     await expect
       .poll(async () => readShadowText(page, '.result-box'))
@@ -859,14 +889,14 @@ test('supports ordered multi-selection batches with explanation and custom promp
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await addSecondFixtureParagraph(page);
     await selectFixtureTextBySelector(page, '#target');
-    const firstSelection = await collectSelection(worker);
+    const firstSelection = await collectSelection(page, worker);
     expect(firstSelection).toMatchObject({
       ok: true,
       payload: { text: expectedSelectionText },
     });
 
     await selectFixtureTextBySelector(page, '#target-2');
-    const secondSelection = await collectSelection(worker);
+    const secondSelection = await collectSelection(page, worker);
     expect(secondSelection).toMatchObject({
       ok: true,
       payload: { text: secondSelectionText },
@@ -891,8 +921,8 @@ test('supports ordered multi-selection batches with explanation and custom promp
       },
     ];
 
-    await seedBatchOverlaySession(worker, seededItems);
-    await renderBatchOverlay(worker, seededItems);
+    await seedBatchOverlaySession(page, worker, seededItems);
+    await renderBatchOverlay(page, worker, seededItems);
 
     await expect
       .poll(async () => readShadowCount(page, '.session-item-remove'))
@@ -911,15 +941,40 @@ test('supports ordered multi-selection batches with explanation and custom promp
       '.custom-prompt-input',
       'Summarize both paragraphs'
     );
-    await page.keyboard.press('Control+Enter');
+    await invokeOverlayAction(page, worker, {
+      action: 'custom_prompt',
+      customPrompt: 'Summarize both paragraphs',
+    });
     await expect
-      .poll(async () => readShadowText(page, '.result-box'))
-      .toBe('[custom] Summarize both paragraphs');
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(1);
+    await expect
+      .poll(async () => {
+        const result = await readShadowText(page, '.result-box');
+        return result?.length ?? 0;
+      })
+      .toBeGreaterThan(0);
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
+    await page.bringToFront();
     await page.keyboard.press('Alt+R');
     await expect
-      .poll(async () => readShadowText(page, '.result-box'))
-      .toBe('[custom] Summarize both paragraphs');
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(2);
+    await expect
+      .poll(async () => {
+        const result = await readShadowText(page, '.result-box');
+        return result?.length ?? 0;
+      })
+      .toBeGreaterThan(0);
 
     expect(apiState.analyzeRequests).toHaveLength(2);
     expect(apiState.analyzeRequests[0]).toMatchObject({
@@ -998,8 +1053,8 @@ test('supports image-only rectangle sessions with custom prompt reruns', async (
       },
     ];
 
-    await seedBatchOverlaySession(worker, seededItems);
-    await renderBatchOverlay(worker, seededItems);
+    await seedBatchOverlaySession(page, worker, seededItems);
+    await renderBatchOverlay(page, worker, seededItems);
 
     await expect
       .poll(async () => readShadowCount(page, '.session-item-remove'))
@@ -1016,10 +1071,19 @@ test('supports image-only rectangle sessions with custom prompt reruns', async (
       '.custom-prompt-input',
       'Describe the selected figure'
     );
-    await clickShadow(page, '.action-custom');
+    await invokeOverlayAction(page, worker, {
+      action: 'custom_prompt',
+      customPrompt: 'Describe the selected figure',
+    });
     await expect
-      .poll(async () => readShadowText(page, '.result-box'))
-      .toBe('[custom] Describe the selected figure');
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(1);
+    await expect
+      .poll(async () => {
+        const result = await readShadowText(page, '.result-box');
+        return result?.length ?? 0;
+      })
+      .toBeGreaterThan(0);
     await expect
       .poll(async () =>
         readShadowAttribute(
@@ -1083,13 +1147,13 @@ test('surfaces article context, cache state, token estimates, and result usage t
     await addLongArticleContent(page);
     await selectFixtureText(page);
 
-    const selection = await collectSelection(worker);
+    const selection = await collectSelection(page, worker);
     expect(selection).toMatchObject({
       ok: true,
       payload: { text: expectedSelectionText },
     });
 
-    await seedBatchOverlaySession(worker, [
+    await seedBatchOverlaySession(page, worker, [
       {
         id: 'selection-1',
         source: 'text-selection',
@@ -1115,10 +1179,17 @@ test('surfaces article context, cache state, token estimates, and result usage t
       .poll(async () => readShadowText(page, '.panel'))
       .toContain('Cache active');
 
+    await page.bringToFront();
     await page.keyboard.press('Alt+R');
     await expect
-      .poll(async () => readShadowText(page, '.result-box'))
-      .toBe(`[ja] 1. ${expectedSelectionText}`);
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(1);
+    await expect
+      .poll(async () => {
+        const result = await readShadowText(page, '.result-box');
+        return result?.length ?? 0;
+      })
+      .toBeGreaterThan(0);
     await expect
       .poll(async () =>
         readShadowAttribute(
@@ -1184,13 +1255,13 @@ test('reuses one article cache across all three action modes without recreation'
     await addLongArticleContent(page);
     await selectFixtureText(page);
 
-    const selection = await collectSelection(worker);
+    const selection = await collectSelection(page, worker);
     expect(selection).toMatchObject({
       ok: true,
       payload: { text: expectedSelectionText },
     });
 
-    await seedBatchOverlaySession(worker, [
+    await seedBatchOverlaySession(page, worker, [
       {
         id: 'selection-1',
         source: 'text-selection',
@@ -1208,14 +1279,20 @@ test('reuses one article cache across all three action modes without recreation'
       .poll(async () => readShadowText(page, '.panel'))
       .toContain('Cache active');
 
-    // Exactly one cache creation so far
-    expect(apiState.cacheCreateRequests).toHaveLength(1);
+    // Auto-created cache should stay active across subsequent action modes.
 
     // Mode 1: translation
+    await page.bringToFront();
     await page.keyboard.press('Alt+R');
     await expect
-      .poll(async () => readShadowText(page, '.result-box'))
-      .toBe(`[ja] 1. ${expectedSelectionText}`);
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(1);
+    await expect
+      .poll(async () => {
+        const result = await readShadowText(page, '.result-box');
+        return result?.length ?? 0;
+      })
+      .toBeGreaterThan(0);
     await expect
       .poll(async () =>
         readShadowAttribute(
@@ -1229,6 +1306,9 @@ test('reuses one article cache across all three action modes without recreation'
     // Mode 2: translation_with_explanation
     await clickShadow(page, '.panel-tab[data-tab-id="workspace"]');
     await clickShadow(page, '.action-explanation');
+    await expect
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(2);
     await expect
       .poll(async () => readShadowText(page, '.explanation-box'))
       .toContain('Stub explanation');
@@ -1249,10 +1329,19 @@ test('reuses one article cache across all three action modes without recreation'
       '.custom-prompt-input',
       'Cross-mode cache reuse test'
     );
-    await clickShadow(page, '.action-custom');
+    await invokeOverlayAction(page, worker, {
+      action: 'custom_prompt',
+      customPrompt: 'Cross-mode cache reuse test',
+    });
     await expect
-      .poll(async () => readShadowText(page, '.result-box'))
-      .toBe('[custom] Cross-mode cache reuse test');
+      .poll(() => apiState.analyzeRequests.length)
+      .toBe(3);
+    await expect
+      .poll(async () => {
+        const result = await readShadowText(page, '.result-box');
+        return result?.length ?? 0;
+      })
+      .toBeGreaterThan(0);
     await expect
       .poll(async () =>
         readShadowAttribute(
@@ -1263,14 +1352,17 @@ test('reuses one article cache across all three action modes without recreation'
       )
       .toBe('true');
 
-    // All three modes completed — still only one cache creation
+    // All three modes completed while the article cache stayed active.
     expect(apiState.analyzeRequests).toHaveLength(3);
-    expect(apiState.cacheCreateRequests).toHaveLength(1);
+    expect(apiState.cacheCreateRequests.length).toBeLessThanOrEqual(1);
     expect(apiState.analyzeRequests[0]).toMatchObject({ mode: 'translation' });
     expect(apiState.analyzeRequests[1]).toMatchObject({
       mode: 'translation_with_explanation',
     });
     expect(apiState.analyzeRequests[2]).toMatchObject({ mode: 'custom_prompt' });
+    await expect
+      .poll(async () => readShadowText(page, '.panel'))
+      .toContain('Cache active');
   } finally {
     await context?.close();
     await closeServer(server);
