@@ -1060,3 +1060,100 @@ test('surfaces article context, cache state, token estimates, and result usage t
     await fs.rm(userDataDir, { recursive: true, force: true });
   }
 });
+
+test('reuses one article cache across all three action modes without recreation', async () => {
+  const userDataDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'gem-read-extension-crossmode-')
+  );
+  const { server, url } = await startFixtureServer();
+  const {
+    server: apiServer,
+    url: apiUrl,
+    state: apiState,
+  } = await startStubApiServer();
+  let context: BrowserContext | undefined;
+
+  try {
+    context = await chromium.launchPersistentContext(userDataDir, {
+      channel: 'chromium',
+      headless: true,
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+      ],
+    });
+
+    const worker = await getServiceWorker(context);
+    const extensionId = await getExtensionId(worker);
+    await savePopupSettings(context, extensionId, apiUrl);
+
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await addLongArticleContent(page);
+    await selectFixtureText(page);
+
+    const selection = await collectSelection(worker);
+    expect(selection).toMatchObject({
+      ok: true,
+      payload: { text: expectedSelectionText },
+    });
+
+    await seedBatchOverlaySession(worker, [
+      {
+        id: 'selection-1',
+        source: 'text-selection',
+        selection: selection.payload!,
+        includeImage: false,
+        previewImageUrl: 'data:image/webp;base64,preview-a',
+        cropDurationMs: 1.5,
+      },
+    ]);
+
+    await openOverlayFromPopupHelper(context, extensionId, page);
+
+    // Wait for article cache to auto-create and become active
+    await expect
+      .poll(async () => readShadowText(page, '.panel'))
+      .toContain('Cache active');
+
+    // Exactly one cache creation so far
+    expect(apiState.cacheCreateRequests).toHaveLength(1);
+
+    // Mode 1: translation
+    await page.keyboard.press('Alt+R');
+    await expect
+      .poll(async () => readShadowText(page, '.result-box'))
+      .toBe(`[ja] 1. ${expectedSelectionText}`);
+
+    // Mode 2: translation_with_explanation
+    await clickShadow(page, '.action-explanation');
+    await expect
+      .poll(async () => readShadowText(page, '.explanation-box'))
+      .toContain('Stub explanation');
+
+    // Mode 3: custom_prompt
+    await fillShadowInput(
+      page,
+      '.custom-prompt-input',
+      'Cross-mode cache reuse test'
+    );
+    await clickShadow(page, '.action-custom');
+    await expect
+      .poll(async () => readShadowText(page, '.result-box'))
+      .toBe('[custom] Cross-mode cache reuse test');
+
+    // All three modes completed — still only one cache creation
+    expect(apiState.analyzeRequests).toHaveLength(3);
+    expect(apiState.cacheCreateRequests).toHaveLength(1);
+    expect(apiState.analyzeRequests[0]).toMatchObject({ mode: 'translation' });
+    expect(apiState.analyzeRequests[1]).toMatchObject({
+      mode: 'translation_with_explanation',
+    });
+    expect(apiState.analyzeRequests[2]).toMatchObject({ mode: 'custom_prompt' });
+  } finally {
+    await context?.close();
+    await closeServer(server);
+    await closeServer(apiServer);
+    await fs.rm(userDataDir, { recursive: true, force: true });
+  }
+});

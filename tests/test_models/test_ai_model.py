@@ -13,8 +13,8 @@ import pytest
 from pdf_epub_reader.dto import AnalysisMode, AnalysisRequest, CacheStatus, ModelInfo
 from pdf_epub_reader.models.ai_model import (
     AIModel,
-    _CUSTOM_PROMPT_SYSTEM_TEMPLATE,
     _MAX_RETRIES,
+    _STATIC_SYSTEM_INSTRUCTION,
 )
 from pdf_epub_reader.utils.config import AppConfig, DEFAULT_TRANSLATION_PROMPT, DEFAULT_EXPLANATION_ADDENDUM
 from pdf_epub_reader.utils.exceptions import (
@@ -91,7 +91,7 @@ class TestAnalyzeTranslation:
 
     @pytest.mark.asyncio
     async def test_translation_calls_api_with_system_instruction(self) -> None:
-        """翻訳モードで system_prompt_translation が使われること。"""
+        """翻訳モードで static system_instruction と contents の言語・タスク指示が使われること。"""
         model = _build_model()
         mock_response = _make_mock_response("翻訳結果")
         model._client.aio.models.generate_content = AsyncMock(
@@ -109,12 +109,13 @@ class TestAnalyzeTranslation:
         call_kwargs = model._client.aio.models.generate_content.call_args
         # model_name がデフォルト
         assert call_kwargs.kwargs["model"] == AppConfig().gemini_model_name
-        # system_instruction にデフォルト翻訳プロンプトが使われている
+        # system_instruction は静的ルールのみ
         config = call_kwargs.kwargs["config"]
-        expected_instruction = DEFAULT_TRANSLATION_PROMPT.format(
-            output_language="日本語"
-        )
-        assert config.system_instruction == expected_instruction
+        assert config.system_instruction == _STATIC_SYSTEM_INSTRUCTION
+        # 出力言語と翻訳タスクは contents[0] のプロンプトヘッダーに含まれる
+        contents = call_kwargs.kwargs["contents"]
+        assert "日本語" in contents[0]
+        assert "Hello world" in contents[1]
         # 結果
         assert result.translated_text == "翻訳結果"
 
@@ -139,7 +140,7 @@ class TestAnalyzeCustomPrompt:
 
     @pytest.mark.asyncio
     async def test_custom_prompt_uses_correct_system_instruction(self) -> None:
-        """カスタムプロンプトモードで専用のシステム指示が使われること。"""
+        """カスタムプロンプトモードで static system_instruction と contents のユーザータスクが使われること。"""
         model = _build_model(output_language="English")
         model._client.aio.models.generate_content = AsyncMock(
             return_value=_make_mock_response("answer")
@@ -154,15 +155,18 @@ class TestAnalyzeCustomPrompt:
 
         call_kwargs = model._client.aio.models.generate_content.call_args
         config = call_kwargs.kwargs["config"]
-        expected = _CUSTOM_PROMPT_SYSTEM_TEMPLATE.format(
-            output_language="English"
-        )
-        assert config.system_instruction == expected
+        # system_instruction は静的ルールのみ
+        assert config.system_instruction == _STATIC_SYSTEM_INSTRUCTION
+        # 出力言語とユーザータスクは contents[0] に含まれる
+        contents = call_kwargs.kwargs["contents"]
+        assert "English" in contents[0]
+        assert "USER_TASK" in contents[0]
+        assert "Summarize" in contents[0]
         assert result.raw_response == "answer"
 
     @pytest.mark.asyncio
     async def test_custom_prompt_included_in_contents(self) -> None:
-        """カスタムプロンプトが contents の先頭に入ること。"""
+        """カスタムプロンプトが contents[0] のプロンプトヘッダー内に含まれ、選択テキストが contents[1] に入ること。"""
         model = _build_model()
         model._client.aio.models.generate_content = AsyncMock(
             return_value=_make_mock_response("ok")
@@ -177,7 +181,10 @@ class TestAnalyzeCustomPrompt:
 
         call_kwargs = model._client.aio.models.generate_content.call_args
         contents = call_kwargs.kwargs["contents"]
-        assert contents[0] == "Summarize this"
+        # contents[0]: language enforcement + USER_TASK section
+        assert "USER_TASK" in contents[0]
+        assert "Summarize this" in contents[0]
+        # contents[1]: selection text
         assert contents[1] == "Some text"
 
 
@@ -201,9 +208,9 @@ class TestAnalyzeMultimodal:
 
         call_kwargs = model._client.aio.models.generate_content.call_args
         contents = call_kwargs.kwargs["contents"]
-        # テキスト + 2 つの画像パート
-        assert len(contents) == 3
-        assert contents[0] == "Math formula"
+        # プロンプトヘッダー + テキスト + 2 つの画像パート
+        assert len(contents) == 4
+        assert contents[1] == "Math formula"
 
 
 class TestAnalyzeModelSpecification:
@@ -505,8 +512,8 @@ class TestUpdateConfig:
         assert model._config is not old
 
     @pytest.mark.asyncio
-    async def test_updated_config_affects_system_instruction(self) -> None:
-        """update_config 後に翻訳プロンプトが新しい output_language を使うこと。"""
+    async def test_updated_config_affects_contents_language(self) -> None:
+        """update_config 後に contents[0] のプロンプトヘッダーが新しい output_language を使うこと。"""
         model = _build_model(output_language="日本語")
         model._client.aio.models.generate_content = AsyncMock(
             return_value=_make_mock_response("ok")
@@ -521,18 +528,46 @@ class TestUpdateConfig:
         await model.analyze(request)
 
         call_kwargs = model._client.aio.models.generate_content.call_args
-        config = call_kwargs.kwargs["config"]
-        assert "English" in config.system_instruction
+        contents = call_kwargs.kwargs["contents"]
+        # 出力言語は system_instruction ではなく contents[0] に含まれる
+        assert "English" in contents[0]
+        assert "日本語" not in contents[0]
+
+    @pytest.mark.asyncio
+    async def test_update_config_language_change_invalidates_cache(self) -> None:
+        """output_language 変更時にキャッシュが無効化されること。"""
+        model = _build_model(output_language="日本語")
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.delete = AsyncMock()
+
+        await model.update_config(AppConfig(output_language="English"))
+
+        model._client.aio.caches.delete.assert_awaited_once()
+        assert model._cache_name is None
+
+    @pytest.mark.asyncio
+    async def test_update_config_same_language_does_not_invalidate_cache(self) -> None:
+        """output_language が変わらない場合はキャッシュを維持すること。"""
+        model = _build_model(output_language="日本語")
+        model._cache_name = "caches/test-123"
+        model._cache_model = "models/gemini-test"
+        model._client.aio.caches.delete = AsyncMock()
+
+        await model.update_config(AppConfig(output_language="日本語"))
+
+        model._client.aio.caches.delete.assert_not_awaited()
+        assert model._cache_name == "caches/test-123"
 
 
 class TestExplanationMode:
     """解説付き翻訳モードのシステム指示とレスポンスパースを検証する。"""
 
     @pytest.mark.asyncio
-    async def test_explanation_mode_adds_addendum_to_system_instruction(
+    async def test_explanation_mode_adds_addendum_to_contents(
         self,
     ) -> None:
-        """include_explanation=True のとき、システム指示に addendum が追記されること。"""
+        """include_explanation=True のとき、addendum が contents[0] のプロンプトヘッダーに含まれること。"""
         model = _build_model()
         model._client.aio.models.generate_content = AsyncMock(
             return_value=_make_mock_response("翻訳\n---\n解説")
@@ -546,8 +581,9 @@ class TestExplanationMode:
         await model.analyze(request)
 
         call_kwargs = model._client.aio.models.generate_content.call_args
-        config = call_kwargs.kwargs["config"]
-        assert DEFAULT_EXPLANATION_ADDENDUM in config.system_instruction
+        contents = call_kwargs.kwargs["contents"]
+        # addendum は system_instruction ではなく contents[0] に含まれる
+        assert DEFAULT_EXPLANATION_ADDENDUM in contents[0]
 
     @pytest.mark.asyncio
     async def test_parse_response_splits_on_separator(self) -> None:
@@ -701,6 +737,19 @@ class TestCreateCache:
         assert cfg.ttl == "1800s"
 
     @pytest.mark.asyncio
+    async def test_create_cache_passes_static_system_instruction(self) -> None:
+        """create_cache() が静的 system_instruction をキャッシュ設定に含めること。"""
+        model = _build_model()
+        mock_cache = _make_mock_cache()
+        model._client.aio.caches.create = AsyncMock(return_value=mock_cache)
+
+        await model.create_cache("full article text")
+
+        call_kw = model._client.aio.caches.create.call_args
+        cfg = call_kw.kwargs["config"]
+        assert cfg.system_instruction == _STATIC_SYSTEM_INSTRUCTION
+
+    @pytest.mark.asyncio
     async def test_create_cache_error_raises_cache_error(self) -> None:
         """SDK エラーが AICacheError にラップされること。"""
         model = _build_model()
@@ -849,7 +898,7 @@ class TestAnalyzeWithCache:
 
     @pytest.mark.asyncio
     async def test_analyze_with_active_cache_sends_cached_content(self) -> None:
-        """キャッシュ active かつモデル一致時に cached_content が付与されること。"""
+        """キャッシュ active かつモデル一致時に cached_content が付与され system_instruction は含まれないこと。"""
         model = _build_model(gemini_model_name="models/gemini-test")
         model._cache_name = "caches/test-123"
         model._cache_model = "models/gemini-test"
@@ -869,6 +918,8 @@ class TestAnalyzeWithCache:
         call_kw = model._client.aio.models.generate_content.call_args
         config = call_kw.kwargs["config"]
         assert config.cached_content == "caches/test-123"
+        # Gemini API はキャッシュ付きリクエストで system_instruction を禁じる
+        assert config.system_instruction is None
 
     @pytest.mark.asyncio
     async def test_analyze_model_mismatch_no_cache(self) -> None:
@@ -1065,3 +1116,79 @@ class TestCreateCacheUnsupportedModel:
 
         with pytest.raises(AICacheError, match="Token count too low"):
             await model.create_cache("short text")
+
+
+class TestCrossModeCacheReuse:
+    """1 つのキャッシュが全 3 アクションモードで再利用できることを検証する (Phase 1)。"""
+
+    def _setup_model_with_cache(self) -> tuple[AIModel, AsyncMock]:
+        model = _build_model(gemini_model_name="models/gemini-test")
+        model._cache_name = "caches/article-123"
+        model._cache_model = "models/gemini-test"
+        mock_gen = AsyncMock(return_value=_make_mock_response("result"))
+        mock_gen.return_value.usage_metadata = None
+        model._client.aio.models.generate_content = mock_gen
+        return model, mock_gen
+
+    @pytest.mark.asyncio
+    async def test_translation_uses_same_cache(self) -> None:
+        """翻訳モードでキャッシュが使われ system_instruction が送信されないこと。"""
+        model, mock_gen = self._setup_model_with_cache()
+        request = AnalysisRequest(text="Hello", mode=AnalysisMode.TRANSLATION)
+        await model.analyze(request)
+
+        config = mock_gen.call_args.kwargs["config"]
+        assert config.cached_content == "caches/article-123"
+        assert config.system_instruction is None
+
+    @pytest.mark.asyncio
+    async def test_translation_with_explanation_uses_same_cache(self) -> None:
+        """解説付き翻訳モードで同一キャッシュが使われ、addendum が contents に含まれること。"""
+        model, mock_gen = self._setup_model_with_cache()
+        request = AnalysisRequest(
+            text="Hello",
+            mode=AnalysisMode.TRANSLATION,
+            include_explanation=True,
+        )
+        await model.analyze(request)
+
+        config = mock_gen.call_args.kwargs["config"]
+        assert config.cached_content == "caches/article-123"
+        assert config.system_instruction is None
+        contents = mock_gen.call_args.kwargs["contents"]
+        assert DEFAULT_EXPLANATION_ADDENDUM in contents[0]
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_uses_same_cache(self) -> None:
+        """カスタムプロンプトモードで同一キャッシュが使われ、system_instruction が送信されないこと。"""
+        model, mock_gen = self._setup_model_with_cache()
+        request = AnalysisRequest(
+            text="Hello",
+            mode=AnalysisMode.CUSTOM_PROMPT,
+            custom_prompt="Explain the key concepts.",
+        )
+        await model.analyze(request)
+
+        config = mock_gen.call_args.kwargs["config"]
+        assert config.cached_content == "caches/article-123"
+        assert config.system_instruction is None
+        contents = mock_gen.call_args.kwargs["contents"]
+        assert "USER_TASK" in contents[0]
+        assert "Explain the key concepts." in contents[0]
+
+    @pytest.mark.asyncio
+    async def test_all_modes_use_same_cache_handle(self) -> None:
+        """3 モード連続呼び出しで全て同一キャッシュ名が使われること。"""
+        model, mock_gen = self._setup_model_with_cache()
+
+        for mode, extra in [
+            (AnalysisMode.TRANSLATION, {}),
+            (AnalysisMode.TRANSLATION, {"include_explanation": True}),
+            (AnalysisMode.CUSTOM_PROMPT, {"custom_prompt": "Summarize"}),
+        ]:
+            mock_gen.return_value = _make_mock_response("ok")
+            mock_gen.return_value.usage_metadata = None
+            await model.analyze(AnalysisRequest(text="text", mode=mode, **extra))
+            cfg = mock_gen.call_args.kwargs["config"]
+            assert cfg.cached_content == "caches/article-123", f"cache not used for mode={mode}"
+            assert cfg.system_instruction is None, f"system_instruction leaked for mode={mode}"

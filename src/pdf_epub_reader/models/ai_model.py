@@ -42,9 +42,14 @@ _MAX_RETRIES = 3
 _INITIAL_BACKOFF_S = 1.0
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
-# カスタムプロンプトモード用のシステム指示テンプレート
-_CUSTOM_PROMPT_SYSTEM_TEMPLATE = (
-    "{output_language} で回答してください。Markdown 形式で回答してください。"
+# キャッシュ作成時・非キャッシュリクエスト時に共通で使うフォーマット指示。
+# 完全に静的・言語非依存なルールのみを含む。
+# Gemini API はキャッシュ付きリクエストに system_instruction を含めることを禁じるため、
+# この指示はキャッシュ作成時に一度だけ埋め込む。
+_STATIC_SYSTEM_INSTRUCTION = (
+    "Output the response in Markdown format.\n"
+    "- Write mathematical expressions using LaTeX notation ($...$ or $$...$$).\n"
+    "- Write chemical formulas using the LaTeX \\ce{} command."
 )
 
 
@@ -79,6 +84,7 @@ class AIModel:
     # Public API
     # ------------------------------------------------------------------
 
+
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult:
         """テキスト（+画像）を Gemini API に送信し解析結果を返す。
 
@@ -101,9 +107,6 @@ class AIModel:
         self._ensure_client()
 
         model_name = request.model_name or self._config.gemini_model_name
-        system_instruction = self._build_system_instruction(
-            request.mode, include_explanation=request.include_explanation
-        )
         contents = self._build_contents(request)
 
         # キャッシュ統合: active かつモデル一致時に cached_content を付与
@@ -112,12 +115,13 @@ class AIModel:
             and self._cache_model == model_name
         )
 
-        config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            cached_content=self._cache_name if use_cache else None,
-        )
-
         if use_cache:
+            # system_instruction はキャッシュ作成時に埋め込み済み。
+            # Gemini API はキャッシュ付きリクエストに system_instruction を
+            # 同時に指定することを禁じるため、config には含めない。
+            config = genai_types.GenerateContentConfig(
+                cached_content=self._cache_name,
+            )
             try:
                 response = await self._call_with_retry(
                     model_name, contents, config
@@ -139,12 +143,15 @@ class AIModel:
                 self._cache_name = None
                 self._cache_model = None
                 config = genai_types.GenerateContentConfig(
-                    system_instruction=system_instruction,
+                    system_instruction=self._build_system_instruction(),
                 )
                 response = await self._call_with_retry(
                     model_name, contents, config
                 )
         else:
+            config = genai_types.GenerateContentConfig(
+                system_instruction=self._build_system_instruction(),
+            )
             response = await self._call_with_retry(
                 model_name, contents, config
             )
@@ -193,8 +200,19 @@ class AIModel:
 
         設定ダイアログでモデル名・プロンプト等が変更された際に
         Presenter から呼び出される。
+
+        ``output_language`` または ``system_prompt_translation`` が変わった場合は
+        キャッシュを無効化する。``output_language`` は contents に埋め込まれるため
+        キャッシュキー自体には影響しないが、変更後の言語設定を即座に反映させる
+        ため旧キャッシュセッションをクリアする。
         """
+        should_invalidate = (
+            config.output_language != self._config.output_language
+            or config.system_prompt_translation != self._config.system_prompt_translation
+        )
         self._config = config
+        if should_invalidate:
+            await self.invalidate_cache()
 
     # --- Phase 7: Context Caching 本実装 ---
 
@@ -237,8 +255,10 @@ class AIModel:
     ) -> CacheStatus:
         """ドキュメント全文テキストの Context Cache を作成する。
 
-        system_instruction はキャッシュに含めない（翻訳/カスタムプロンプトで
-        システム指示が異なるため、リクエスト時に個別指定する）。
+        静的なフォーマット指示（``_STATIC_SYSTEM_INSTRUCTION``）をキャッシュに
+        一度だけ埋め込む。出力言語やモード固有のタスク指示は request の
+        contents 側に含めるため、キャッシュは article body + model だけで
+        キーイングされ、モード切替・言語変更時に再作成不要となる。
 
         Args:
             full_text: キャッシュ対象の全文テキスト。
@@ -263,6 +283,7 @@ class AIModel:
                 model=resolved_model,
                 config=genai_types.CreateCachedContentConfig(
                     contents=[full_text],
+                    system_instruction=self._build_system_instruction(),
                     display_name=display_name,
                     ttl=ttl,
                 ),
@@ -497,43 +518,52 @@ class AIModel:
             getattr(meta, "candidates_token_count", None),
         )
 
-    def _build_system_instruction(
-        self, mode: AnalysisMode, *, include_explanation: bool = False
-    ) -> str:
-        """モードに応じたシステムプロンプトを構築する。
-
-        テンプレート内の ``{output_language}`` を実際の出力言語で置換する。
-        翻訳モードかつ ``include_explanation=True`` の場合は、解説要求の
-        追記（``DEFAULT_EXPLANATION_ADDENDUM``）をプロンプト末尾に付与する。
-        """
-        if mode == AnalysisMode.TRANSLATION:
-            template = self._config.system_prompt_translation
-        else:
-            template = _CUSTOM_PROMPT_SYSTEM_TEMPLATE
-        instruction = template.format(output_language=self._config.output_language)
-        if mode == AnalysisMode.TRANSLATION and include_explanation:
-            instruction += DEFAULT_EXPLANATION_ADDENDUM
-        return instruction
-
     @staticmethod
+    def _build_system_instruction() -> str:
+        """完全に静的な言語非依存のフォーマット指示を返す。
+
+        Markdown 出力・LaTeX 数式記法・化学式 ``\\ce{}`` ルールのみを含む。
+        この指示は ``create_cache()`` でキャッシュ作成時に一度だけ埋め込まれ、
+        キャッシュ付きリクエスト（``analyze()`` の ``use_cache=True`` パス）では
+        ``GenerateContentConfig`` に含めてはならない。
+        非キャッシュリクエストでは ``GenerateContentConfig`` に直接渡す。
+        """
+        return _STATIC_SYSTEM_INSTRUCTION
+
     def _build_contents(
+        self,
         request: AnalysisRequest,
     ) -> list[genai_types.Part | str]:
         """リクエストから API に送る contents リストを組み立てる。
 
-        テキストを先頭に置き、画像がある場合は Part.from_bytes で追加する。
-        カスタムプロンプトモードではプロンプト文を先頭に付与する。
+        先頭のプロンプトヘッダーに出力言語の明示とモード別タスク指示を含む
+        プロンプトボディエンベロープを配置し、続いて選択テキスト・画像を追加する。
+
+        - ``TRANSLATION`` (``include_explanation=False``): 翻訳タスクのみ
+        - ``TRANSLATION`` (``include_explanation=True``): 翻訳タスク + ``---`` 区切り解説指示
+        - ``CUSTOM_PROMPT``: 出力言語指示 + ``USER_TASK`` セクション
         """
+        output_language = self._config.output_language
         parts: list[genai_types.Part | str] = []
 
-        # カスタムプロンプトモードの場合、ユーザープロンプトを先頭に配置
-        if (
-            request.mode == AnalysisMode.CUSTOM_PROMPT
-            and request.custom_prompt
-        ):
-            parts.append(request.custom_prompt)
+        if request.mode == AnalysisMode.CUSTOM_PROMPT:
+            user_task = request.custom_prompt or ""
+            prompt_header = (
+                f"Respond in {output_language}.\n\n"
+                f"USER_TASK:\n{user_task}"
+            )
+        else:
+            translation_task = self._config.system_prompt_translation.format(
+                output_language=output_language
+            )
+            if request.include_explanation:
+                translation_task += DEFAULT_EXPLANATION_ADDENDUM
+            prompt_header = f"Respond in {output_language}.\n\n{translation_task}"
 
-        # 対象テキスト
+        # プロンプトヘッダー（言語指示 + タスク指示）
+        parts.append(prompt_header)
+
+        # 選択テキスト
         parts.append(request.text)
 
         # マルチモーダル画像
