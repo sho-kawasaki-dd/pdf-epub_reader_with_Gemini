@@ -483,17 +483,11 @@ async function handleTabUpdated(
     return;
   }
 
-  const settings = await loadExtensionSettings();
-  const invalidatedSession = session.articleCacheState?.cacheName
-    ? await invalidateArticleCache(session, {
-        apiBaseUrl: settings.apiBaseUrl,
-        reason: 'url-changed',
-        notice: 'Article cache was cleared because the page URL changed.',
-      })
-    : session;
-
+  // URL 変化時にキャッシュを即削除しない。SPA ではセクション切り替えで URL が
+  // 変わるが本文が同じ場合があるため、次回翻訳時の syncArticleCacheState で
+  // 本文ハッシュを比較してから判断する。
   await setAnalysisSession(
     tabId,
-    buildNavigatedSessionState(invalidatedSession, changeInfo.url)
+    buildNavigatedSessionState(session, changeInfo.url)
   );
 }

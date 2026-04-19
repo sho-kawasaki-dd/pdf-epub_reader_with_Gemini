@@ -358,23 +358,15 @@ export function buildNavigatedSessionState(
   session: SelectionAnalysisSession,
   nextUrl: string
 ): SelectionAnalysisSession {
+  // 選択内容とページコンテキストはクリアするが、キャッシュ状態はそのまま保持する。
+  // SPA ではセクション切り替えで URL が変わるため、ここでキャッシュを削除すると
+  // セクション移動のたびに再作成が走る。本文ハッシュによる有効性確認は
+  // 次回の syncArticleCacheState に委ねる。
   return {
     ...session,
     items: [],
     articleContext: undefined,
     articleContextError: `Page changed to ${nextUrl}. Article context will be refreshed on the next run.`,
-    articleCacheState: {
-      ...session.articleCacheState,
-      status: 'invalidated',
-      autoCreateEligible: false,
-      invalidationReason: 'url-changed',
-      notice: 'Article cache was cleared because the page URL changed.',
-      lastValidatedAt: new Date().toISOString(),
-      cacheName: undefined,
-      tokenCount: undefined,
-      ttlSeconds: undefined,
-      expireTime: undefined,
-    },
   };
 }
 
@@ -491,10 +483,13 @@ function shouldInvalidateForArticleChange(
   state: ArticleCacheState,
   articleContext: ArticleContext
 ): boolean {
+  // URL の変化だけでは無効化しない。SPA ではセクション切り替えのたびに URL が変わるが
+  // 本文ハッシュが一致していれば同じコンテンツとみなしてキャッシュを再利用する。
+  // ハッシュが変わった場合（=実際に別コンテンツ）だけ無効化する。
   return Boolean(
     state.cacheName &&
-    ((state.articleUrl && state.articleUrl !== articleContext.url) ||
-      (state.articleHash && state.articleHash !== articleContext.bodyHash))
+    state.articleHash &&
+    state.articleHash !== articleContext.bodyHash
   );
 }
 
