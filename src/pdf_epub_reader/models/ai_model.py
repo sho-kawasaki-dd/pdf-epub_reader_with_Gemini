@@ -124,11 +124,17 @@ class AIModel:
                 )
             except AIRateLimitError:
                 raise
-            except AIAPIError:
+            except AIAPIError as exc:
                 # キャッシュ付きリクエスト失敗 → キャッシュを内部クリアし
                 # キャッシュなしで 1 回リトライ
                 logger.warning(
-                    "キャッシュ付きリクエスト失敗、キャッシュなしでリトライ"
+                    "キャッシュ付きリクエスト失敗、キャッシュなしでリトライ: "
+                    "status_code=%s cache_name=%s cache_model=%s request_model=%s message=%s",
+                    exc.status_code,
+                    self._cache_name,
+                    self._cache_model,
+                    model_name,
+                    exc.message,
                 )
                 self._cache_name = None
                 self._cache_model = None
