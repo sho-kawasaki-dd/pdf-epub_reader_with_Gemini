@@ -72,14 +72,14 @@ export async function runSelectionAnalysis(
       sessionItems: reusableSession?.items,
       maxSessionItems: MAX_SELECTION_SESSION_ITEMS,
       customPrompt: resolvedRequestOptions.customPrompt,
-      sessionReady: Boolean(reusableSession),
+      sessionReady: Boolean(reusableSession ?? cachedSession),
       selectedText: fallbackSelectionText,
-      articleContext: reusableSession?.articleContext,
-      articleContextError: reusableSession?.articleContextError,
-      articleCacheState: reusableSession?.articleCacheState,
-      payloadTokenEstimate: reusableSession?.payloadTokenEstimate,
-      payloadTokenModelName: reusableSession?.payloadTokenModelName,
-      payloadTokenError: reusableSession?.payloadTokenError,
+      articleContext: (reusableSession ?? cachedSession)?.articleContext,
+      articleContextError: (reusableSession ?? cachedSession)?.articleContextError,
+      articleCacheState: (reusableSession ?? cachedSession)?.articleCacheState,
+      payloadTokenEstimate: (reusableSession ?? cachedSession)?.payloadTokenEstimate,
+      payloadTokenModelName: (reusableSession ?? cachedSession)?.payloadTokenModelName,
+      payloadTokenError: (reusableSession ?? cachedSession)?.payloadTokenError,
     });
 
     const session = await resolveAnalysisSession(
@@ -89,7 +89,8 @@ export async function runSelectionAnalysis(
       modelOptions,
       options.reuseCachedSession === true,
       resolvedRequestOptions.apiBaseUrl,
-      resolvedRequestOptions.modelName
+      resolvedRequestOptions.modelName,
+      cachedSession
     );
     const sessionItem = getRequiredSessionItem(session);
 
@@ -165,7 +166,8 @@ async function resolveAnalysisSession(
   modelOptions: ModelOption[],
   reuseCachedSession: boolean,
   apiBaseUrl: string,
-  modelName: string | undefined
+  modelName: string | undefined,
+  cachedSession: SelectionAnalysisSession | undefined
 ): Promise<SelectionAnalysisSession> {
   if (reuseCachedSession) {
     const session = await getCachedSession(tabId);
@@ -209,7 +211,8 @@ async function resolveAnalysisSession(
     fallbackSelectionText,
     modelOptions,
     apiBaseUrl,
-    modelName
+    modelName,
+    cachedSession
   );
 }
 
@@ -219,7 +222,8 @@ async function createFreshSession(
   fallbackSelectionText: string,
   modelOptions: ModelOption[],
   apiBaseUrl: string,
-  modelName: string | undefined
+  modelName: string | undefined,
+  cachedSession: SelectionAnalysisSession | undefined
 ): Promise<SelectionAnalysisSession> {
   const [selection, articleContextResult] = await Promise.all([
     collectSelection(tabId, fallbackSelectionText),
@@ -263,6 +267,8 @@ async function createFreshSession(
     ],
     modelOptions,
     lastAction: 'translation',
+    lastModelName: cachedSession?.lastModelName,
+    lastCustomPrompt: cachedSession?.lastCustomPrompt,
     articleContext:
       articleContextResult.ok && 'payload' in articleContextResult
         ? articleContextResult.payload
@@ -270,6 +276,10 @@ async function createFreshSession(
     articleContextError: articleContextResult.ok
       ? undefined
       : articleContextResult.error,
+    articleCacheState: cachedSession?.articleCacheState,
+    payloadTokenEstimate: cachedSession?.payloadTokenEstimate,
+    payloadTokenModelName: cachedSession?.payloadTokenModelName,
+    payloadTokenError: cachedSession?.payloadTokenError,
   };
   const cacheAwareSession = await syncArticleCacheState(session, {
     apiBaseUrl,

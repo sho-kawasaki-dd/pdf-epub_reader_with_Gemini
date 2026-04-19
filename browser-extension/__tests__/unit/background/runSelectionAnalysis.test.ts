@@ -37,6 +37,7 @@ vi.mock('../../../src/background/services/articleCacheService', () => ({
 import { clearAnalysisSession } from '../../../src/background/services/analysisSessionStore';
 import { runPhase0TranslationTest } from '../../../src/background/usecases/runPhase0TranslationTest';
 import { runSelectionAnalysis } from '../../../src/background/usecases/runSelectionAnalysis';
+import { setAnalysisSession } from '../../../src/background/services/analysisSessionStore';
 
 // selection capture、crop、API 呼び出し、overlay 更新の orchestration を固定する suite。
 describe('runSelectionAnalysis', () => {
@@ -331,6 +332,97 @@ describe('runSelectionAnalysis', () => {
         usedMock: true,
         availability: 'mock',
         degradedReason: 'mock-response',
+      })
+    );
+  });
+
+  it('carries forward the cached article state into a fresh session after navigation', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [
+        {
+          modelId: 'gemini-2.5-flash',
+          displayName: 'gemini-2.5-flash',
+        },
+      ],
+      lastAction: 'translation',
+      lastModelName: 'gemini-2.5-flash',
+      articleContextError:
+        'Page changed to https://example.com/article/section-2. Article context will be refreshed on the next run.',
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'gemini-2.5-flash',
+        articleUrl: 'https://example.com/article/section-1',
+        articleIdentity: 'example::example article',
+        articleHash: 'abc123def4567890',
+        tokenEstimate: 1400,
+        tokenCount: 1500,
+        ttlSeconds: 3600,
+      },
+      payloadTokenEstimate: 35,
+      payloadTokenModelName: 'gemini-2.5-flash',
+    });
+    collectSelectionMock.mockResolvedValueOnce({
+      ok: true,
+      payload: {
+        text: 'selection from content script',
+        rect: { left: 10, top: 20, width: 30, height: 40 },
+        viewportWidth: 1440,
+        viewportHeight: 900,
+        devicePixelRatio: 2,
+        url: 'https://example.com/article/section-2',
+        pageTitle: 'Example page',
+      },
+    });
+    cropSelectionImageMock.mockResolvedValueOnce({
+      imageDataUrl: 'data:image/webp;base64,crop',
+      durationMs: 12.5,
+    });
+    sendAnalyzeTranslateRequestMock.mockResolvedValueOnce({
+      ok: true,
+      mode: 'translation',
+      translated_text: '翻訳結果',
+      explanation: null,
+      raw_response: '翻訳結果',
+      used_mock: false,
+      availability: 'live',
+      degraded_reason: null,
+      image_count: 1,
+    });
+
+    await runSelectionAnalysis(
+      { id: 7, windowId: 9 } as chrome.tabs.Tab,
+      'fallback'
+    );
+
+    expect(renderOverlayMock).toHaveBeenNthCalledWith(
+      1,
+      7,
+      expect.objectContaining({
+        status: 'loading',
+        sessionReady: true,
+        articleCacheState: expect.objectContaining({
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+        }),
+        payloadTokenEstimate: 35,
+      })
+    );
+    expect(syncArticleCacheStateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+          articleIdentity: 'example::example article',
+        }),
+      }),
+      expect.objectContaining({
+        allowAutoCreate: true,
       })
     );
   });
