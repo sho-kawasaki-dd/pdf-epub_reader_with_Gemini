@@ -621,6 +621,14 @@ async function readShadowText(
   return textContent?.trim() ?? null;
 }
 
+async function readShadowAttribute(
+  page: Page,
+  selector: string,
+  attributeName: string
+): Promise<string | null> {
+  return shadowLocator(page, selector).getAttribute(attributeName);
+}
+
 async function clickShadow(page: Page, selector: string): Promise<void> {
   await shadowLocator(page, selector).click();
 }
@@ -706,6 +714,15 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
     await expect
       .poll(async () => readShadowText(page, '.selection-box'))
       .toBe(expectedSelectionText);
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="workspace"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
     await page.keyboard.press('Escape');
     await expect
@@ -716,11 +733,53 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
     await expect
       .poll(async () => readShadowText(page, '.badge'))
       .toContain('Live Result');
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="workspace"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
     await page.keyboard.press('Alt+R');
     await expect
       .poll(async () => readShadowText(page, '.result-box'))
       .toBe(`[ja] 1. ${expectedSelectionText}`);
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
+
+    await page.keyboard.press('Escape');
+    await expect
+      .poll(async () => readShadowText(page, '.launcher-button'))
+      .toContain('Gem Read');
+
+    await sendTabMessage(worker, {
+      type: 'phase1.invokeOverlayAction',
+      payload: { action: 'translation' },
+    });
+    await expect
+      .poll(async () => readShadowText(page, '.result-box'))
+      .toBe(`[ja] 1. ${expectedSelectionText}`);
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
+
+    await clickShadow(page, '.panel-tab[data-tab-id="workspace"]');
 
     await fillShadowInput(
       page,
@@ -732,18 +791,32 @@ test('reopens the cached overlay and supports keyboard reruns in Chromium', asyn
       .poll(async () => readShadowText(page, '.result-box'))
       .toBe('[custom] Explain the highlighted paragraph');
     await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
+    await expect
       .poll(async () => readShadowText(page, '.explanation-box'))
       .toBe('');
 
     expect(apiState.healthChecks).toBeGreaterThan(0);
     expect(apiState.modelRequests).toBeGreaterThan(0);
-    expect(apiState.analyzeRequests).toHaveLength(2);
+    expect(apiState.analyzeRequests).toHaveLength(3);
     expect(apiState.analyzeRequests[0]).toMatchObject({
       mode: 'translation',
       text: `1. ${expectedSelectionText}`,
       model_name: 'gemini-2.5-flash',
     });
     expect(apiState.analyzeRequests[1]).toMatchObject({
+      mode: 'translation',
+      text: `1. ${expectedSelectionText}`,
+      model_name: 'gemini-2.5-flash',
+    });
+    expect(apiState.analyzeRequests[2]).toMatchObject({
       mode: 'custom_prompt',
       custom_prompt: 'Explain the highlighted paragraph',
       text: `1. ${expectedSelectionText}`,
@@ -947,6 +1020,15 @@ test('supports image-only rectangle sessions with custom prompt reruns', async (
     await expect
       .poll(async () => readShadowText(page, '.result-box'))
       .toBe('[custom] Describe the selected figure');
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
     expect(apiState.analyzeRequests).toHaveLength(1);
     expect(apiState.analyzeRequests[0]).toMatchObject({
@@ -1038,12 +1120,22 @@ test('surfaces article context, cache state, token estimates, and result usage t
       .poll(async () => readShadowText(page, '.result-box'))
       .toBe(`[ja] 1. ${expectedSelectionText}`);
     await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
+    await expect
       .poll(async () => readShadowText(page, '.panel'))
       .toContain('Last Response');
     await expect
       .poll(async () => readShadowText(page, '.panel'))
       .toContain('cached');
 
+    await clickShadow(page, '.panel-tab[data-tab-id="workspace"]');
     await clickShadow(page, '.action-delete-article-cache');
     await expect
       .poll(async () => readShadowText(page, '.panel'))
@@ -1124,14 +1216,34 @@ test('reuses one article cache across all three action modes without recreation'
     await expect
       .poll(async () => readShadowText(page, '.result-box'))
       .toBe(`[ja] 1. ${expectedSelectionText}`);
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
     // Mode 2: translation_with_explanation
+    await clickShadow(page, '.panel-tab[data-tab-id="workspace"]');
     await clickShadow(page, '.action-explanation');
     await expect
       .poll(async () => readShadowText(page, '.explanation-box'))
       .toContain('Stub explanation');
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
     // Mode 3: custom_prompt
+    await clickShadow(page, '.panel-tab[data-tab-id="workspace"]');
     await fillShadowInput(
       page,
       '.custom-prompt-input',
@@ -1141,6 +1253,15 @@ test('reuses one article cache across all three action modes without recreation'
     await expect
       .poll(async () => readShadowText(page, '.result-box'))
       .toBe('[custom] Cross-mode cache reuse test');
+    await expect
+      .poll(async () =>
+        readShadowAttribute(
+          page,
+          '.panel-tab[data-tab-id="gemini"]',
+          'aria-selected'
+        )
+      )
+      .toBe('true');
 
     // All three modes completed — still only one cache creation
     expect(apiState.analyzeRequests).toHaveLength(3);

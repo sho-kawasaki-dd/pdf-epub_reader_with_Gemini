@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { renderOverlay } from '../../../src/content/overlay/renderOverlay';
 import { getChromeMock } from '../../mocks/chrome';
@@ -10,6 +10,25 @@ function getShadowRoot(): ShadowRoot {
   }
   return host.shadowRoot;
 }
+
+function closeOverlayIfOpen(): void {
+  if (!document.getElementById('gem-read-phase0-overlay-host')) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: 'Escape',
+      shiftKey: true,
+      bubbles: true,
+    })
+  );
+}
+
+afterEach(() => {
+  closeOverlayIfOpen();
+  vi.clearAllMocks();
+});
 
 // overlay が payload から状態を再構成し、action を background に委譲する契約を固定する suite。
 describe('renderOverlay', () => {
@@ -43,6 +62,14 @@ describe('renderOverlay', () => {
     expect((root.querySelector('.model-input') as HTMLInputElement).value).toBe(
       'gemini-2.5-flash'
     );
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="workspace"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+    expect(
+      root.querySelector('.panel-tab[data-tab-id="gemini"]')
+    ).toHaveProperty('disabled', true);
     expect((root.querySelector('.result-section') as HTMLElement).hidden).toBe(
       true
     );
@@ -144,6 +171,16 @@ describe('renderOverlay', () => {
     expect(root.querySelector('.banner-box')?.textContent).toContain(
       'Mock mode is active'
     );
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="workspace"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="gemini"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('false');
     expect(root.querySelector('.result-box')?.textContent?.trim()).toBe(
       '翻訳結果'
     );
@@ -173,6 +210,196 @@ describe('renderOverlay', () => {
     );
     expect(root.querySelector('.session-item-text')?.textContent).toContain(
       'Selected paragraph'
+    );
+  });
+
+  it('auto-opens the Gemini tab when a fresh successful response arrives', () => {
+    renderOverlay({
+      status: 'loading',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+    });
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '翻訳結果',
+      rawResponse: '翻訳結果',
+    });
+
+    const root = getShadowRoot();
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="gemini"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+    expect(
+      (root.querySelector('.panel-tabpanel--workspace') as HTMLElement).hidden
+    ).toBe(true);
+    expect(
+      (root.querySelector('.panel-tabpanel--gemini') as HTMLElement).hidden
+    ).toBe(false);
+  });
+
+  it('keeps a manual tab choice across ordinary rerenders', () => {
+    renderOverlay({
+      status: 'loading',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+    });
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '翻訳結果',
+      rawResponse: '翻訳結果',
+    });
+
+    let root = getShadowRoot();
+    (root.querySelector(
+      '.panel-tab[data-tab-id="workspace"]'
+    ) as HTMLButtonElement).click();
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '翻訳結果',
+      rawResponse: '翻訳結果',
+      imageCount: 2,
+    });
+
+    root = getShadowRoot();
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="workspace"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="gemini"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('false');
+  });
+
+  it('expands from the launcher into the Gemini tab when a fresh result finishes', () => {
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '前回結果',
+      rawResponse: '前回結果',
+    });
+
+    let root = getShadowRoot();
+    (root.querySelector('.minimize') as HTMLButtonElement).click();
+
+    renderOverlay({
+      status: 'loading',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+    });
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '新しい結果',
+      rawResponse: '新しい結果',
+    });
+
+    root = getShadowRoot();
+    expect(root.querySelector('.panel')).not.toBeNull();
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="gemini"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+  });
+
+  it('supports keyboard navigation across overlay tabs', () => {
+    renderOverlay({
+      status: 'loading',
+      action: 'translation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+    });
+    renderOverlay({
+      status: 'success',
+      action: 'translation_with_explanation',
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: '翻訳結果',
+      explanation: '補足説明',
+      rawResponse: '翻訳結果\n\n---\n\n補足説明',
+    });
+
+    let root = getShadowRoot();
+    const geminiTab = root.querySelector(
+      '.panel-tab[data-tab-id="gemini"]'
+    ) as HTMLButtonElement;
+    geminiTab.focus();
+
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'ArrowLeft',
+        bubbles: true,
+      })
+    );
+
+    root = getShadowRoot();
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="workspace"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+    expect(root.activeElement).toBe(
+      root.querySelector('.panel-tab[data-tab-id="workspace"]')
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'End',
+        bubbles: true,
+      })
+    );
+
+    root = getShadowRoot();
+    expect(
+      root
+        .querySelector('.panel-tab[data-tab-id="gemini"]')
+        ?.getAttribute('aria-selected')
+    ).toBe('true');
+    expect(root.activeElement).toBe(
+      root.querySelector('.panel-tab[data-tab-id="gemini"]')
     );
   });
 

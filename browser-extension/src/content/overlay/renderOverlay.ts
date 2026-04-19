@@ -27,12 +27,15 @@ import {
 import { collectSelection } from '../selection/snapshotStore';
 
 const OVERLAY_HOST_ID = 'gem-read-phase0-overlay-host';
+type OverlayTabId = 'workspace' | 'gemini';
+
 // minimize 状態と draft 入力は再描画を跨いで維持したいので module state に置く。
 let isOverlayMinimized = false;
 let draftModelName = '';
 let draftCustomPrompt = '';
 let isRectangleModeActive = false;
 let isRawResponseExpanded = false;
+let activeOverlayTab: OverlayTabId = 'workspace';
 let currentOverlayPayload: OverlayPayload | null = null;
 let keyboardHandlerAttached = false;
 
@@ -41,6 +44,8 @@ let keyboardHandlerAttached = false;
  * こうしておくと background から渡る状態だけで表示を復元でき、ページ本体の DOM 状態に依存しにくい。
  */
 export function renderOverlay(payload: OverlayPayload): void {
+  const previousPayload = currentOverlayPayload;
+
   if (payload.launcherOnly !== undefined) {
     isOverlayMinimized = payload.launcherOnly;
   }
@@ -52,6 +57,12 @@ export function renderOverlay(payload: OverlayPayload): void {
     ...payload,
     launcherOnly: undefined,
   };
+
+  if (shouldAutoOpenGeminiTab(previousPayload, effectivePayload)) {
+    activeOverlayTab = 'gemini';
+    isOverlayMinimized = false;
+  }
+
   currentOverlayPayload = effectivePayload;
 
   if (
@@ -133,6 +144,21 @@ export function renderOverlay(payload: OverlayPayload): void {
   const actionHint = root.querySelector<HTMLElement>('.action-hint');
   const bannerSection = root.querySelector<HTMLElement>('.banner-section');
   const bannerBox = root.querySelector<HTMLElement>('.banner-box');
+  const workspaceTabButton = root.querySelector<HTMLButtonElement>(
+    '.panel-tab[data-tab-id="workspace"]'
+  );
+  const geminiTabButton = root.querySelector<HTMLButtonElement>(
+    '.panel-tab[data-tab-id="gemini"]'
+  );
+  const workspacePanel = root.querySelector<HTMLElement>(
+    '.panel-tabpanel--workspace'
+  );
+  const geminiPanel = root.querySelector<HTMLElement>(
+    '.panel-tabpanel--gemini'
+  );
+  const geminiEmptyState = root.querySelector<HTMLElement>(
+    '.gemini-empty-state'
+  );
 
   if (
     !selectionBox ||
@@ -162,7 +188,12 @@ export function renderOverlay(payload: OverlayPayload): void {
     !explanationButton ||
     !actionHint ||
     !bannerSection ||
-    !bannerBox
+    !bannerBox ||
+    !workspaceTabButton ||
+    !geminiTabButton ||
+    !workspacePanel ||
+    !geminiPanel ||
+    !geminiEmptyState
   ) {
     return;
   }
@@ -197,6 +228,18 @@ export function renderOverlay(payload: OverlayPayload): void {
 
   bannerSection.hidden = !shouldShowBanner(effectivePayload);
   bannerBox.textContent = buildBannerText(effectivePayload);
+
+  const hasGeminiContent = overlayHasGeminiContent(effectivePayload);
+  const geminiTabEnabled = isGeminiTabEnabled(
+    effectivePayload,
+    activeOverlayTab
+  );
+  workspacePanel.hidden = activeOverlayTab !== 'workspace';
+  geminiPanel.hidden = activeOverlayTab !== 'gemini';
+  configureOverlayTabButton(workspaceTabButton, 'workspace', true);
+  configureOverlayTabButton(geminiTabButton, 'gemini', geminiTabEnabled);
+  geminiEmptyState.hidden = hasGeminiContent;
+  geminiEmptyState.textContent = buildGeminiEmptyStateText(effectivePayload);
 
   modelInput.value = draftModelName;
   modelDatalist.innerHTML = (effectivePayload.modelOptions ?? [])
@@ -283,6 +326,16 @@ export function renderOverlay(payload: OverlayPayload): void {
   deleteArticleCacheButton?.addEventListener('click', () => {
     void deleteActiveArticleCache(errorBox, errorSection);
   });
+  workspaceTabButton.addEventListener('click', () => {
+    setActiveOverlayTab('workspace');
+  });
+  geminiTabButton.addEventListener('click', () => {
+    if (geminiTabButton.disabled) {
+      return;
+    }
+
+    setActiveOverlayTab('gemini');
+  });
   for (const removeButton of root.querySelectorAll<HTMLButtonElement>(
     '.session-item-remove'
   )) {
@@ -329,6 +382,10 @@ function renderPanelMarkup(
   sessionItems: SelectionSessionItem[],
   maxSessionItems: number
 ): string {
+  const workspaceSelected = activeOverlayTab === 'workspace';
+  const geminiSelected = activeOverlayTab === 'gemini';
+  const geminiTabEnabled = isGeminiTabEnabled(payload, activeOverlayTab);
+
   return `
     <style>
       :host {
@@ -384,6 +441,58 @@ function renderPanelMarkup(
         color: #fde68a;
         font-size: 11px;
         font-weight: 600;
+      }
+      .panel-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .panel-tab {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+        background: rgba(30, 41, 59, 0.72);
+        color: #cbd5e1;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 9px 12px;
+        transition:
+          background-color 120ms ease,
+          border-color 120ms ease,
+          color 120ms ease,
+          box-shadow 120ms ease;
+      }
+      .panel-tab:hover:not(:disabled) {
+        border-color: rgba(250, 204, 21, 0.44);
+        color: #f8fafc;
+      }
+      .panel-tab:focus-visible {
+        outline: 2px solid rgba(250, 204, 21, 0.85);
+        outline-offset: 2px;
+      }
+      .panel-tab[aria-selected='true'] {
+        background: linear-gradient(180deg, rgba(250, 204, 21, 0.28), rgba(245, 158, 11, 0.18));
+        border-color: rgba(250, 204, 21, 0.64);
+        box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.16);
+        color: #fef3c7;
+      }
+      .panel-tab:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+      .panel-tabpanel[hidden] {
+        display: none;
+      }
+      .gemini-empty-state {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border: 1px dashed rgba(148, 163, 184, 0.28);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.55);
+        color: #cbd5e1;
       }
       .close,
       .minimize {
@@ -681,64 +790,85 @@ function renderPanelMarkup(
           <button class="close" type="button" aria-label="Close overlay">X</button>
         </div>
       </div>
-      <div class="section banner-section" hidden>
-        <div class="label">Runtime</div>
-        <div class="banner-box"></div>
+      <div class="panel-tabs" role="tablist" aria-label="Overlay sections">
+        ${renderOverlayTabButton('workspace', 'Workspace', workspaceSelected, true)}
+        ${renderOverlayTabButton('gemini', 'Gemini', geminiSelected, geminiTabEnabled)}
       </div>
-      ${renderArticleContextMarkup(payload)}
-      ${renderTokenInsightsMarkup(payload)}
-      <div class="section">
-        <div class="label">Batch</div>
-        <div class="action-grid">
-          <div class="batch-counter">${sessionItems.length}/${maxSessionItems} items</div>
-          <div class="action-row batch-actions">
-            <button class="action-button action-button--secondary action-add-selection" type="button">Add Current Selection</button>
-            <button class="action-button action-button--secondary action-add-rectangle" type="button">Add Rectangle</button>
+      <div
+        class="panel-tabpanel panel-tabpanel--workspace"
+        id="${getOverlayTabPanelId('workspace')}"
+        role="tabpanel"
+        aria-labelledby="${getOverlayTabButtonId('workspace')}"
+        ${workspaceSelected ? '' : 'hidden'}
+      >
+        <div class="section banner-section" hidden>
+          <div class="label">Runtime</div>
+          <div class="banner-box"></div>
+        </div>
+        ${renderArticleContextMarkup(payload)}
+        ${renderTokenInsightsMarkup(payload)}
+        <div class="section">
+          <div class="label">Batch</div>
+          <div class="action-grid">
+            <div class="batch-counter">${sessionItems.length}/${maxSessionItems} items</div>
+            <div class="action-row batch-actions">
+              <button class="action-button action-button--secondary action-add-selection" type="button">Add Current Selection</button>
+              <button class="action-button action-button--secondary action-add-rectangle" type="button">Add Rectangle</button>
+            </div>
+            <div class="batch-hint"></div>
+            <div class="batch-list">${renderSessionItemsMarkup(sessionItems)}</div>
           </div>
-          <div class="batch-hint"></div>
-          <div class="batch-list">${renderSessionItemsMarkup(sessionItems)}</div>
+        </div>
+        <div class="section">
+          <div class="label">Actions</div>
+          <div class="action-grid">
+            <input class="input model-input" type="text" list="gem-read-model-list" placeholder="Optional model override" />
+            <datalist class="model-list" id="gem-read-model-list"></datalist>
+            <div class="action-row">
+              <button class="action-button action-button--primary action-translation" type="button">Translate</button>
+              <button class="action-button action-button--secondary action-explanation" type="button">Translate + Explain</button>
+            </div>
+            <textarea class="textarea custom-prompt-input" placeholder="Custom prompt for the current selection"></textarea>
+            <div class="action-row action-row--single">
+              <button class="action-button action-button--accent action-custom" type="button">Run Custom Prompt</button>
+            </div>
+            <div class="action-hint"></div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="label">Selection</div>
+          <div class="box selection-box"></div>
+        </div>
+        <div class="section preview-section" hidden>
+          <div class="label">Crop Preview</div>
+          <img class="image preview-image" alt="Selection crop preview" />
         </div>
       </div>
-      <div class="section">
-        <div class="label">Actions</div>
-        <div class="action-grid">
-          <input class="input model-input" type="text" list="gem-read-model-list" placeholder="Optional model override" />
-          <datalist class="model-list" id="gem-read-model-list"></datalist>
-          <div class="action-row">
-            <button class="action-button action-button--primary action-translation" type="button">Translate</button>
-            <button class="action-button action-button--secondary action-explanation" type="button">Translate + Explain</button>
-          </div>
-          <textarea class="textarea custom-prompt-input" placeholder="Custom prompt for the current selection"></textarea>
-          <div class="action-row action-row--single">
-            <button class="action-button action-button--accent action-custom" type="button">Run Custom Prompt</button>
-          </div>
-          <div class="action-hint"></div>
+      <div
+        class="panel-tabpanel panel-tabpanel--gemini"
+        id="${getOverlayTabPanelId('gemini')}"
+        role="tabpanel"
+        aria-labelledby="${getOverlayTabButtonId('gemini')}"
+        ${geminiSelected ? '' : 'hidden'}
+      >
+        <div class="gemini-empty-state"></div>
+        <div class="section result-section" hidden>
+          <div class="label result-label">Translation</div>
+          <div class="box rich-text-box result-box"></div>
         </div>
-      </div>
-      <div class="section">
-        <div class="label">Selection</div>
-        <div class="box selection-box"></div>
-      </div>
-      <div class="section preview-section" hidden>
-        <div class="label">Crop Preview</div>
-        <img class="image preview-image" alt="Selection crop preview" />
-      </div>
-      <div class="section result-section" hidden>
-        <div class="label result-label">Translation</div>
-        <div class="box rich-text-box result-box"></div>
-      </div>
-      <div class="section explanation-section" hidden>
-        <div class="label">Explanation</div>
-        <div class="box rich-text-box explanation-box"></div>
-      </div>
-      <div class="section raw-section" hidden>
-        <div class="label">Details</div>
-        <details class="details raw-details">
-          <summary>Raw Response</summary>
-          <div class="details-body">
-            <div class="box raw-box"></div>
-          </div>
-        </details>
+        <div class="section explanation-section" hidden>
+          <div class="label">Explanation</div>
+          <div class="box rich-text-box explanation-box"></div>
+        </div>
+        <div class="section raw-section" hidden>
+          <div class="label">Details</div>
+          <details class="details raw-details">
+            <summary>Raw Response</summary>
+            <div class="details-body">
+              <div class="box raw-box"></div>
+            </div>
+          </details>
+        </div>
       </div>
       <div class="section error-section" hidden>
         <div class="label">Error</div>
@@ -792,6 +922,116 @@ function renderLauncherMarkup(payload: OverlayPayload): string {
       <button class="launcher-close" type="button" aria-label="Close overlay">X</button>
     </div>
   `;
+}
+
+function renderOverlayTabButton(
+  tabId: OverlayTabId,
+  label: string,
+  selected: boolean,
+  enabled: boolean
+): string {
+  return `
+    <button
+      class="panel-tab"
+      type="button"
+      id="${getOverlayTabButtonId(tabId)}"
+      role="tab"
+      data-tab-id="${tabId}"
+      aria-selected="${selected ? 'true' : 'false'}"
+      aria-controls="${getOverlayTabPanelId(tabId)}"
+      aria-disabled="${enabled ? 'false' : 'true'}"
+      tabindex="${selected ? '0' : '-1'}"
+      ${enabled ? '' : 'disabled'}
+    >${label}</button>
+  `;
+}
+
+function getOverlayTabButtonId(tabId: OverlayTabId): string {
+  return `gem-read-overlay-tab-${tabId}`;
+}
+
+function getOverlayTabPanelId(tabId: OverlayTabId): string {
+  return `gem-read-overlay-panel-${tabId}`;
+}
+
+function overlayHasGeminiContent(
+  payload: OverlayPayload | null | undefined
+): boolean {
+  return Boolean(
+    payload?.translatedText || payload?.explanation || payload?.rawResponse
+  );
+}
+
+function shouldAutoOpenGeminiTab(
+  previousPayload: OverlayPayload | null,
+  nextPayload: OverlayPayload
+): boolean {
+  return (
+    previousPayload?.status === 'loading' &&
+    nextPayload.status === 'success' &&
+    overlayHasGeminiContent(nextPayload)
+  );
+}
+
+function isGeminiTabEnabled(
+  payload: OverlayPayload,
+  currentTab: OverlayTabId
+): boolean {
+  return (
+    overlayHasGeminiContent(payload) ||
+    currentTab === 'gemini'
+  );
+}
+
+function configureOverlayTabButton(
+  button: HTMLButtonElement,
+  tabId: OverlayTabId,
+  enabled: boolean
+): void {
+  const selected = activeOverlayTab === tabId;
+  button.setAttribute('aria-selected', selected ? 'true' : 'false');
+  button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+  button.tabIndex = selected ? 0 : -1;
+  button.disabled = !enabled;
+}
+
+function buildGeminiEmptyStateText(payload: OverlayPayload): string {
+  if (payload.status === 'loading') {
+    return 'Gemini response is on the way. This tab will fill in when the current run finishes.';
+  }
+  if (payload.status === 'error') {
+    return 'No Gemini response is available for the latest run.';
+  }
+  return 'Run Translate or Translate + Explain to show Gemini output here.';
+}
+
+function setActiveOverlayTab(
+  tabId: OverlayTabId,
+  options: { focus?: boolean } = {}
+): void {
+  if (activeOverlayTab === tabId && !options.focus) {
+    return;
+  }
+
+  activeOverlayTab = tabId;
+  if (!currentOverlayPayload) {
+    return;
+  }
+
+  renderOverlay(currentOverlayPayload);
+  if (options.focus) {
+    focusOverlayTabButton(tabId);
+  }
+}
+
+function focusOverlayTabButton(tabId: OverlayTabId): void {
+  const host = document.getElementById(OVERLAY_HOST_ID);
+  const root = host?.shadowRoot;
+  root
+    ?.querySelector<HTMLButtonElement>(
+      `.panel-tab[data-tab-id="${tabId}"]`
+    )
+    ?.focus();
 }
 
 function buildMetaText(payload: OverlayPayload): string {
@@ -1430,6 +1670,7 @@ function disposeOverlay(): void {
   isOverlayMinimized = false;
   isRectangleModeActive = false;
   isRawResponseExpanded = false;
+  activeOverlayTab = 'workspace';
   draftModelName = '';
   draftCustomPrompt = '';
   currentOverlayPayload = null;
@@ -1516,6 +1757,21 @@ function handleOverlayKeyDown(event: KeyboardEvent): void {
     return;
   }
 
+  const focusedTabButton = getFocusedOverlayTabButton(root);
+  if (focusedTabButton) {
+    const nextTabId = resolveKeyboardOverlayTab(
+      root,
+      focusedTabButton,
+      event.key
+    );
+    if (nextTabId) {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveOverlayTab(nextTabId, { focus: true });
+      return;
+    }
+  }
+
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     const customPromptInput = root.querySelector<HTMLTextAreaElement>(
       '.custom-prompt-input'
@@ -1578,6 +1834,60 @@ function handleOverlayKeyDown(event: KeyboardEvent): void {
       errorSection
     );
   }
+}
+
+function getFocusedOverlayTabButton(
+  root: ShadowRoot
+): HTMLButtonElement | null {
+  const activeElement = root.activeElement;
+  if (
+    activeElement instanceof HTMLButtonElement &&
+    activeElement.matches('.panel-tab[data-tab-id]')
+  ) {
+    return activeElement;
+  }
+
+  return null;
+}
+
+function resolveKeyboardOverlayTab(
+  root: ShadowRoot,
+  focusedTabButton: HTMLButtonElement,
+  key: string
+): OverlayTabId | null {
+  const enabledButtons = Array.from(
+    root.querySelectorAll<HTMLButtonElement>('.panel-tab[data-tab-id]')
+  ).filter((button) => !button.disabled);
+  if (enabledButtons.length === 0) {
+    return null;
+  }
+
+  const currentIndex = enabledButtons.indexOf(focusedTabButton);
+  if (currentIndex === -1) {
+    return null;
+  }
+
+  if (key === 'Home') {
+    return readOverlayTabId(enabledButtons[0]);
+  }
+  if (key === 'End') {
+    return readOverlayTabId(enabledButtons.at(-1) ?? null);
+  }
+  if (key !== 'ArrowLeft' && key !== 'ArrowRight') {
+    return null;
+  }
+
+  const direction = key === 'ArrowRight' ? 1 : -1;
+  const nextIndex =
+    (currentIndex + direction + enabledButtons.length) % enabledButtons.length;
+  return readOverlayTabId(enabledButtons[nextIndex]);
+}
+
+function readOverlayTabId(
+  button: HTMLButtonElement | null
+): OverlayTabId | null {
+  const tabId = button?.dataset.tabId;
+  return tabId === 'workspace' || tabId === 'gemini' ? tabId : null;
 }
 
 function isEditableTarget(event: KeyboardEvent): boolean {
