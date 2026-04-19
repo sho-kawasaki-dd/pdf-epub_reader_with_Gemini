@@ -266,7 +266,7 @@ class AIModel:
             result = await self._client.aio.models.count_tokens(
                 model=resolved_model, contents=text
             )
-            return result.total_tokens
+            return result.total_tokens or 0
         except genai_errors.APIError as exc:
             raise AIAPIError(
                 str(exc), status_code=getattr(exc, "code", None)
@@ -576,7 +576,8 @@ class AIModel:
             user_task = request.custom_prompt or ""
             prompt_header = (
                 f"Respond in {output_language}.\n\n"
-                f"USER_TASK:\n{user_task}"
+                f"USER_TASK:\n{user_task}\n\n"
+                f"Apply the task only to the text enclosed in <selection> tags below."
             )
         else:
             translation_task = self._config.system_prompt_translation.format(
@@ -584,13 +585,19 @@ class AIModel:
             )
             if request.include_explanation:
                 translation_task += DEFAULT_EXPLANATION_ADDENDUM
-            prompt_header = f"Respond in {output_language}.\n\n{translation_task}"
+            prompt_header = (
+                f"Respond in {output_language}.\n\n"
+                f"{translation_task}\n\n"
+                f"Translate only the text enclosed in <selection> tags below. "
+                f"You may use the article context to inform terminology and style, "
+                f"but your output must contain only the translation of the selected text."
+            )
 
         # プロンプトヘッダー（言語指示 + タスク指示）
         parts.append(prompt_header)
 
-        # 選択テキスト
-        parts.append(request.text)
+        # 選択テキスト（キャッシュ内の記事全文と混同しないよう境界タグで囲む）
+        parts.append(f"<selection>\n{request.text}\n</selection>")
 
         # マルチモーダル画像
         for image_bytes in request.images:

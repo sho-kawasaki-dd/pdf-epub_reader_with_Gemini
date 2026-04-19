@@ -26,6 +26,9 @@ const STRIP_SELECTOR =
   'script, style, noscript, template, svg, canvas, iframe, form, button';
 const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
 const FNV_PRIME = 0x100000001b3n;
+// 記事本文のハッシュ計算に使う先頭文字数。
+// 広告挿入など動的 DOM 変化の影響を受けにくくするため、先頭部分のみを対象とする。
+const BODY_HASH_PREFIX_LENGTH = 2000;
 
 export function collectArticleContext(
   documentRef: Document = document
@@ -218,8 +221,12 @@ function finalizeArticleContext(input: {
 }
 
 function computeBodyHash(text: string): string {
+  // 先頭 BODY_HASH_PREFIX_LENGTH 文字のみをハッシュ対象とする。
+  // これにより、広告・推薦コンテンツなど本文末尾への動的挿入による
+  // 誤ったキャッシュ無効化を防ぐ。
+  const prefix = text.slice(0, BODY_HASH_PREFIX_LENGTH);
   let hash = FNV_OFFSET_BASIS;
-  for (const character of text.normalize('NFKC')) {
+  for (const character of prefix.normalize('NFKC')) {
     hash ^= BigInt(character.codePointAt(0) ?? 0);
     hash = BigInt.asUintN(64, hash * FNV_PRIME);
   }

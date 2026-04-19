@@ -115,7 +115,9 @@ class TestAnalyzeTranslation:
         # 出力言語と翻訳タスクは contents[0] のプロンプトヘッダーに含まれる
         contents = call_kwargs.kwargs["contents"]
         assert "日本語" in contents[0]
+        # 選択テキストは <selection> タグで囲まれる
         assert "Hello world" in contents[1]
+        assert "<selection>" in contents[1]
         # 結果
         assert result.translated_text == "翻訳結果"
 
@@ -184,8 +186,9 @@ class TestAnalyzeCustomPrompt:
         # contents[0]: language enforcement + USER_TASK section
         assert "USER_TASK" in contents[0]
         assert "Summarize this" in contents[0]
-        # contents[1]: selection text
-        assert contents[1] == "Some text"
+        # contents[1]: selection text（<selection> タグで囲まれる）
+        assert "Some text" in contents[1]
+        assert "<selection>" in contents[1]
 
 
 class TestAnalyzeMultimodal:
@@ -210,7 +213,8 @@ class TestAnalyzeMultimodal:
         contents = call_kwargs.kwargs["contents"]
         # プロンプトヘッダー + テキスト + 2 つの画像パート
         assert len(contents) == 4
-        assert contents[1] == "Math formula"
+        assert "Math formula" in contents[1]
+        assert "<selection>" in contents[1]
 
 
 class TestAnalyzeModelSpecification:
