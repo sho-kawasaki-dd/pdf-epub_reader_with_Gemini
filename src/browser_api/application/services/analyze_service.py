@@ -35,6 +35,16 @@ class AnalyzeService:
 
     router は request/response 変換だけに留め、model 解決、画像 decode、mock fallback といった
     browser-extension 固有の振る舞いはこの service に集約する。
+
+    Prompt-body mapping strategy
+    ----------------------------
+    ブラウザ拡張の公開アクションモード（``translation`` /
+    ``translation_with_explanation`` / ``custom_prompt``）は外部コントラクトとして
+    そのまま存続する。``_build_ai_request()`` がそれらを ``AnalysisRequest`` に
+    マッピングし、AIModel の ``_build_contents()`` がモード別タスク記述と
+    ``output_language`` をリクエスト本文の先頭プロンプトヘッダーに変換する。
+    モード固有のシステム指示は一切壁の外に出ないため、アーティクルキャッシュは
+    モード切替・言語変更時に再作成不要である。
     """
 
     ai_gateway: GemReadAIGateway
@@ -176,7 +186,17 @@ class AnalyzeService:
         resolved_model_name: str,
         image_bytes: list[bytes],
     ) -> AnalysisRequest:
-        """Map browser_api actions onto the legacy AnalysisRequest contract."""
+        """Map browser_api actions onto the legacy AnalysisRequest contract.
+
+        ``custom_prompt`` → ``AnalysisMode.CUSTOM_PROMPT`` + ``custom_prompt`` フィールドに
+        マッピングする。
+        ``translation`` → ``AnalysisMode.TRANSLATION``（``include_explanation=False``）。
+        ``translation_with_explanation`` → ``AnalysisMode.TRANSLATION``（``include_explanation=True``）。
+
+        モード固有の ``system_instruction`` は一切生成しない。アクションモードの
+        指示と ``output_language`` は AIModel の ``_build_contents()`` がリクエスト
+        本文の先頭プロンプトヘッダーに変換するため、キャッシュキーに影響しない。
+        """
 
         if command.mode == "custom_prompt":
             return AnalysisRequest(
