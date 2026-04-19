@@ -55,6 +55,8 @@ You can:
 - Opening a different document invalidates the previous cache.
 - Changing to a different model may require cache invalidation.
 - The application also invalidates cache during shutdown cleanup.
+- Switching action mode (translation, explanation, or custom prompt) does **not** require a new cache. One cache serves all three actions.
+- Changing output language does **not** require a new cache. The language is sent with each request, not stored in the cache.
 
 ## Browser Extension Cache Behavior
 
@@ -64,6 +66,8 @@ For article pages in the browser extension:
 - Automatic cache creation is conditional. It only happens when article extraction succeeds, the article is large enough, and the selected model is expected to support caching.
 - The overlay shows whether the cache is active, invalidated, unsupported, or degraded.
 - `Delete Cache` removes the active cache for the current tab only.
+- One article cache serves all three overlay actions (Translate, Translate + Explain, and Run Custom Prompt). Switching between them does not recreate the cache.
+- Changing output language in the popup settings does not recreate the article cache. The new language takes effect on the next analysis request.
 
 The cache can disappear without direct user action when:
 

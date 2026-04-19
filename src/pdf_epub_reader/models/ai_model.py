@@ -7,6 +7,22 @@ API キー未設定でもインスタンス化は可能だが、API 呼び出し
 Context Caching は google-genai SDK の Explicit Caching API で実装。
 キャッシュが active かつモデル一致時に ``analyze()`` で ``cached_content``
 パラメータを自動付与し、失敗時はキャッシュなしでフォールバックする。
+
+Prompt-body strategy
+--------------------
+``system_instruction`` には完全に静的・言語非依存のルール（Markdown 出力・
+LaTeX 数式・``\\ce{}`` 化学式）のみを含める。この指示は ``create_cache()``
+でキャッシュ作成時に一度だけ埋め込まれる。
+
+Gemini API はキャッシュ付き ``GenerateContent`` リクエストへの
+``system_instruction`` 付与を禁じるため、``analyze()`` のキャッシュ使用時パスでは
+``GenerateContentConfig`` に ``system_instruction`` を含めない。
+
+アクションモードの違い（``translation`` / ``translation_with_explanation`` /
+``custom_prompt``）および ``output_language`` はすべて ``_build_contents()``
+が生成するリクエスト本文の先頭プロンプトヘッダーに埋め込まれる。これにより
+キャッシュキーはアーティクル本文 + モデルのみとなり、モード切替・言語変更時に
+キャッシュを再作成する必要がない。
 """
 
 from __future__ import annotations
@@ -89,9 +105,19 @@ class AIModel:
         """テキスト（+画像）を Gemini API に送信し解析結果を返す。
 
         キャッシュが active かつリクエストのモデルと一致する場合、
-        ``cached_content`` パラメータを自動付与する。キャッシュ付き
-        リクエストが非レートリミットエラーで失敗した場合はキャッシュを
-        内部クリアし、キャッシュなしで 1 回リトライする。
+        ``cached_content`` パラメータを自動付与する。Gemini API はキャッシュ付き
+        リクエストへの ``system_instruction`` 付与を禁じるため、キャッシュ使用時
+        パスでは ``GenerateContentConfig`` に ``system_instruction`` を含めない
+        （キャッシュ作成時に埋め込み済みの静的指示が自動適用される）。
+
+        アクションモードの違い（translation / translation_with_explanation /
+        custom_prompt）と ``output_language`` は ``_build_contents()`` が生成する
+        プロンプトヘッダーに埋め込まれるため、モード切替・言語変更はキャッシュを
+        再作成しない。
+
+        キャッシュ付きリクエストが非レートリミットエラーで失敗した場合はキャッシュを
+        内部クリアし、``system_instruction`` を含む ``GenerateContentConfig`` で
+        キャッシュなし 1 回リトライする。
 
         Args:
             request: 解析要求。mode / text / images / model_name 等を含む。

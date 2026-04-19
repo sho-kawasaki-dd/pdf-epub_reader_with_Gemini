@@ -32,11 +32,12 @@
 ## Cache Flow
 
 1. Full document text is extracted.
-2. `AIModel.create_cache()` creates remote cached content for a selected model.
+2. `AIModel.create_cache()` creates remote cached content for a selected model, embedding the static `system_instruction` (Markdown + LaTeX + `\ce{}` rules) into the cache at creation time. The cache key is article body + model only.
 3. `PanelPresenter` updates cache UI state and countdown.
-4. `AIModel.analyze()` includes cached content when the model matches.
-5. If cache-backed analysis fails for non-rate-limit reasons, AIModel clears the cache linkage and retries without cache.
-6. Cache can expire, be invalidated manually, be replaced, or be cleared on shutdown.
+4. `AIModel.analyze()` includes `cached_content` when the model matches. Because the Gemini API forbids supplying `system_instruction` alongside `cached_content`, the `GenerateContentConfig` for cached requests omits `system_instruction` entirely — the cached copy applies automatically.
+5. Action mode differences (`translation`, `translation_with_explanation`, `custom_prompt`) and `output_language` are encoded in `contents` at request time, not in `system_instruction`. This means one cache serves all three action modes and all language settings without recreation.
+6. If cache-backed analysis fails for non-rate-limit reasons, AIModel clears the cache linkage and retries without cache, supplying the static `system_instruction` in the fallback `GenerateContentConfig`.
+7. Cache can expire, be invalidated manually, be replaced, or be cleared on shutdown.
 
 ## Browser Extension Phase 2 Flow
 
@@ -52,13 +53,14 @@
 
 ## Browser Extension Phase 4 Flow
 
-1. The current tab keeps its ordered selection batch, extracted article context, and one active article cache state in the same tab-scoped session.
+1. The current tab keeps its ordered selection batch, extracted article context, and one active article cache state in the same tab-scoped session. The article cache is keyed only by article body + model; action mode and output language do not affect the cache key.
 2. When the overlay is opened or an analysis rerun starts, background refreshes article extraction through the content script.
-3. Background evaluates cache invalidation rules for URL change, model change, body hash mismatch, remote expiration, and manual delete.
+3. Background evaluates cache invalidation rules for URL change, model change, body hash mismatch, remote expiration, and manual delete. Switching action mode (translation / translation-with-explanation / custom prompt) or changing output language does not invalidate the article cache.
 4. Background asks `/tokens/count` for two separate estimates when possible: the current selection batch request and the extracted article body.
 5. If the article is large enough and the selected model is cache-capable, background creates one active remote cache through `/cache/create`.
 6. The overlay renders article status, token comparison, and degraded notices without blocking normal selection-based actions.
 7. After `/analyze/translate` returns, the overlay also shows Gemini usage metadata such as prompt tokens, cached-content tokens, output tokens, and total tokens when the backend provides them.
+8. Because action differences and output language are encoded in request `contents`, successive translation, translation-with-explanation, and custom-prompt calls reuse the same cached article without forcing cache recreation.
 
 ## Overlay Rerun Flow
 

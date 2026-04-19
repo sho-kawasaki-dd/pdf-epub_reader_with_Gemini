@@ -114,6 +114,8 @@ Common invalidation reasons:
 - The remote cache expired
 - You used `Delete Cache` in the overlay
 
+Switching action mode (Translate, Translate + Explain, or Run Custom Prompt) or changing output language does **not** invalidate the article cache. Gem Read encodes the action and output language in each request directly, so one article cache serves all three actions and all language settings without recreating it.
+
 Current limitations:
 
 - Reload or browser-restart session restore
