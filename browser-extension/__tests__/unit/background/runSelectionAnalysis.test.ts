@@ -667,4 +667,101 @@ describe('runSelectionAnalysis', () => {
       })
     );
   });
+
+  it('keeps using cacheName after a selection is added to an existing cached session', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+    await setAnalysisSession(7, {
+      items: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'existing selection',
+            rect: { left: 10, top: 20, width: 30, height: 40 },
+            viewportWidth: 1440,
+            viewportHeight: 900,
+            devicePixelRatio: 2,
+            url: 'https://example.com/article',
+            pageTitle: 'Example page',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,crop',
+          cropDurationMs: 12.5,
+        },
+        {
+          id: 'selection-2',
+          source: 'text-selection',
+          selection: {
+            text: 'new selection',
+            rect: { left: 15, top: 25, width: 35, height: 45 },
+            viewportWidth: 1440,
+            viewportHeight: 900,
+            devicePixelRatio: 2,
+            url: 'https://example.com/article',
+            pageTitle: 'Example page',
+          },
+          includeImage: false,
+          previewImageUrl: 'data:image/webp;base64,crop-2',
+          cropDurationMs: 9,
+        },
+      ],
+      modelOptions: [
+        {
+          modelId: 'gemini-2.5-flash',
+          displayName: 'gemini-2.5-flash',
+        },
+      ],
+      lastAction: 'translation',
+      lastModelName: 'gemini-2.5-flash',
+      articleContext: {
+        title: 'Example article',
+        url: 'https://example.com/article',
+        bodyText: 'Long article context paragraph one. Long article context paragraph two. Long article context paragraph three.',
+        bodyHash: 'abc123def4567890',
+        source: 'readability',
+        textLength: 104,
+      },
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'gemini-2.5-flash',
+        articleUrl: 'https://example.com/article',
+        articleIdentity: 'example article',
+        articleHash: 'abc123def4567890',
+        tokenEstimate: 1400,
+        tokenCount: 1500,
+        ttlSeconds: 3600,
+        notice: 'Article cache created automatically for the current tab.',
+      },
+    });
+    sendAnalyzeTranslateRequestMock.mockResolvedValueOnce({
+      ok: true,
+      mode: 'translation',
+      translated_text: '翻訳結果',
+      explanation: null,
+      raw_response: '翻訳結果',
+      used_mock: false,
+      availability: 'live',
+      degraded_reason: null,
+      image_count: 2,
+    });
+
+    await runSelectionAnalysis(
+      { id: 7, windowId: 9 } as chrome.tabs.Tab,
+      '',
+      { reuseCachedSession: true }
+    );
+
+    expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        action: 'translation',
+        modelName: 'gemini-2.5-flash',
+        cacheName: 'cachedContents/article-1',
+      })
+    );
+  });
 });

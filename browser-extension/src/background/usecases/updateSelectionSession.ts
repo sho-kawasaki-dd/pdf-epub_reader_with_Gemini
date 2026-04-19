@@ -64,6 +64,10 @@ export async function appendSelectionSessionItem(
     lastCustomPrompt: existingSession?.lastCustomPrompt,
     articleContext: existingSession?.articleContext,
     articleContextError: existingSession?.articleContextError,
+    articleCacheState: existingSession?.articleCacheState,
+    payloadTokenEstimate: existingSession?.payloadTokenEstimate,
+    payloadTokenModelName: existingSession?.payloadTokenModelName,
+    payloadTokenError: existingSession?.payloadTokenError,
   };
 
   const tokenAwareSession = await syncPayloadTokenEstimate(nextSession, {

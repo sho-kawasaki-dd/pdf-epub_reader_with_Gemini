@@ -21,6 +21,7 @@ vi.mock('../../../src/background/services/cropSelectionImage', () => ({
 import {
   clearAnalysisSession,
   getAnalysisSession,
+  setAnalysisSession,
 } from '../../../src/background/services/analysisSessionStore';
 import {
   appendLiveSelectionSessionItem,
@@ -84,6 +85,69 @@ describe('updateSelectionSession', () => {
       expect.objectContaining({
         sessionReady: true,
         sessionItems: [expect.objectContaining({ id: item.id })],
+      })
+    );
+  });
+
+  it('preserves article cache state when appending a new selection item', async () => {
+    const chromeMock = getChromeMock();
+    (chromeMock.tabs.captureVisibleTab as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,shot'
+    );
+    await setAnalysisSession(7, {
+      items: [],
+      modelOptions: [
+        {
+          modelId: 'gemini-2.5-flash',
+          displayName: 'gemini-2.5-flash',
+        },
+      ],
+      lastAction: 'translation',
+      lastModelName: 'gemini-2.5-flash',
+      articleContext: {
+        title: 'Example article',
+        url: 'https://example.com/article',
+        bodyText: 'Long article body',
+        bodyHash: 'abc123def4567890',
+        source: 'readability',
+        textLength: 1800,
+      },
+      articleCacheState: {
+        status: 'active',
+        cacheName: 'cachedContents/article-1',
+        modelName: 'gemini-2.5-flash',
+        articleUrl: 'https://example.com/article',
+        articleIdentity: 'example.com/article::example article',
+        articleHash: 'abc123def4567890',
+        tokenEstimate: 1400,
+        tokenCount: 1500,
+        ttlSeconds: 3600,
+      },
+      payloadTokenEstimate: 42,
+      payloadTokenModelName: 'gemini-2.5-flash',
+    });
+
+    await appendSelectionSessionItem(
+      { id: 7, windowId: 3 } as chrome.tabs.Tab,
+      {
+        text: 'Selected text',
+        rect: { left: 1, top: 2, width: 3, height: 4 },
+        viewportWidth: 100,
+        viewportHeight: 100,
+        devicePixelRatio: 1,
+        url: 'https://example.com',
+        pageTitle: 'Example',
+      },
+      'text-selection'
+    );
+
+    expect(await getAnalysisSession(7)).toEqual(
+      expect.objectContaining({
+        articleCacheState: expect.objectContaining({
+          status: 'active',
+          cacheName: 'cachedContents/article-1',
+        }),
+        payloadTokenModelName: 'gemini-2.5-flash',
       })
     );
   });
