@@ -130,6 +130,41 @@ describe('markdownExport', () => {
     expect(markdown).toContain('- Total Tokens: 18');
   });
 
+  it('omits explanation and selection sections when those toggles are disabled', () => {
+    const markdown = buildMarkdownExportDocument(
+      {
+        action: 'translation_with_explanation',
+        modelName: 'gemini-2.5-pro',
+        pageTitle: 'Example article',
+        pageUrl: 'https://example.com/article',
+        translatedText: 'Translated body',
+        explanation: 'Supporting explanation',
+        rawResponse: 'raw payload',
+        selectedText: 'Selected source',
+      },
+      {
+        includeExplanation: false,
+        includeSelections: false,
+        includeRawResponse: true,
+        includeArticleMetadata: false,
+        includeUsageMetrics: false,
+        includeYamlFrontmatter: false,
+      },
+      {
+        exportedAt: new Date('2026-04-20T10:30:00.000Z'),
+      }
+    );
+
+    expect(markdown).toContain('## Gemini Response');
+    expect(markdown).toContain('Translated body');
+    expect(markdown).toContain('## Raw Response');
+    expect(markdown).not.toContain('## Explanation');
+    expect(markdown).not.toContain('Supporting explanation');
+    expect(markdown).not.toContain('## Selections');
+    expect(markdown).not.toContain('Selected source');
+    expect(markdown.startsWith('---')).toBe(false);
+  });
+
   it('sanitizes the page title and formats the markdown filename timestamp', () => {
     expect(sanitizePageTitle('  Example:/\\?%*:|"<> title -  ')).toBe(
       'Example----------- title'
@@ -175,6 +210,35 @@ describe('markdownExport', () => {
       filename: 'Example article-20260420-103045.md',
     });
     expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:markdown-export');
+  });
+
+  it('maps chrome.downloads failures to a typed error message', async () => {
+    const chromeMock = getChromeMock();
+    const createObjectURL = vi.fn().mockReturnValue('blob:markdown-export');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', {
+      createObjectURL,
+      revokeObjectURL,
+    });
+    (
+      chromeMock.downloads.download as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementation((_options, callback) => {
+      chrome.runtime.lastError = {
+        message: 'The download was blocked.',
+      } as chrome.runtime.LastError;
+      callback?.(undefined);
+      chrome.runtime.lastError = undefined;
+    });
+
+    await expect(
+      downloadMarkdownFile({
+        markdown: '# Export',
+        pageTitle: 'Example article',
+        exportedAt: new Date(2026, 3, 20, 10, 30, 45),
+      })
+    ).rejects.toThrow('Markdown download failed: The download was blocked.');
+
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:markdown-export');
   });
 });

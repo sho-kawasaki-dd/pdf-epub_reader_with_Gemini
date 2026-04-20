@@ -22,6 +22,71 @@ async function settle(): Promise<void> {
 
 // popup が設定編集と接続確認に責務を絞っていることを固定する suite。
 describe('renderPopup', () => {
+  it('renders markdown export checkboxes with the documented default states', async () => {
+    document.body.innerHTML = '<div id="app"></div>';
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createJsonResponse({ status: 'ok' }))
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          ok: true,
+          models: [],
+          source: 'storage_fallback',
+          availability: 'mock',
+          detail: null,
+          degraded_reason: 'mock-response',
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await renderPopup(document);
+    await settle();
+
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-explanation"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(true);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-selections"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(true);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-raw-response"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-article-metadata"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-usage-metrics"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+    expect(
+      (
+        document.querySelector(
+          '[data-role="include-yaml-frontmatter"]'
+        ) as HTMLInputElement
+      ).checked
+    ).toBe(false);
+  });
+
   it('loads saved settings and renders live popup status', async () => {
     document.body.innerHTML = '<div id="app"></div>';
     const chromeMock = getChromeMock();

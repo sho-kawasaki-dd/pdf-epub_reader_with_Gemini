@@ -622,6 +622,57 @@ describe('renderOverlay', () => {
     );
   });
 
+  it('exports mock-mode Gemini results with the same markdown message contract', async () => {
+    const chromeMock = getChromeMock();
+    (
+      chromeMock.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ ok: true, downloadId: 42 });
+
+    renderOverlay({
+      status: 'success',
+      action: 'translation',
+      usedMock: true,
+      availability: 'mock',
+      degradedReason: 'mock-response',
+      sessionReady: true,
+      sessionItems: [
+        {
+          id: 'selection-1',
+          source: 'text-selection',
+          selection: {
+            text: 'Selected paragraph',
+            rect: { left: 1, top: 2, width: 3, height: 4 },
+            viewportWidth: 100,
+            viewportHeight: 100,
+            devicePixelRatio: 1,
+            url: 'https://example.com/article',
+            pageTitle: 'Example Page',
+          },
+          includeImage: false,
+        },
+      ],
+      translatedText: 'Mock translated body',
+      rawResponse: 'mock raw payload',
+    });
+
+    const root = getShadowRoot();
+    (
+      root.querySelector('.action-export-markdown') as HTMLButtonElement
+    ).click();
+    await Promise.resolve();
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'phase5.exportMarkdown',
+        payload: expect.objectContaining({
+          translatedText: 'Mock translated body',
+          pageTitle: 'Example Page',
+          pageUrl: 'https://example.com/article',
+        }),
+      })
+    );
+  });
+
   it('renders article cache details and sends manual delete requests', async () => {
     const chromeMock = getChromeMock();
     (

@@ -582,4 +582,35 @@ describe('registerBackgroundRuntime', () => {
       filename: 'Example-20260420-103000.md',
     });
   });
+
+  it('maps markdown export failures to an error runtime response', async () => {
+    exportMarkdownMock.mockRejectedValueOnce(
+      new Error('Markdown download failed: The download was blocked.')
+    );
+    registerBackgroundRuntime();
+
+    const handler = getRuntimeMessageHandler();
+    const sendResponse = vi.fn();
+    const keepChannelOpen = handler(
+      {
+        type: 'phase5.exportMarkdown',
+        payload: {
+          action: 'translation',
+          pageTitle: 'Example article',
+          pageUrl: 'https://example.com/article',
+          translatedText: 'Translated body',
+        },
+      },
+      { tab: { id: 7 } },
+      sendResponse
+    );
+
+    expect(keepChannelOpen).toBe(true);
+    await flushAsyncWork();
+
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: false,
+      error: 'Markdown download failed: The download was blocked.',
+    });
+  });
 });
