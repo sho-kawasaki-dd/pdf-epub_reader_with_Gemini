@@ -14,16 +14,43 @@ export const OUTPUT_IMAGE_QUALITY = 0.82;
 export const OUTPUT_MAX_LONG_EDGE = 768;
 export const MAX_SELECTION_SESSION_ITEMS = 10;
 
+export interface MarkdownExportSettings {
+	includeExplanation: boolean;
+	includeSelections: boolean;
+	includeRawResponse: boolean;
+	includeArticleMetadata: boolean;
+	includeUsageMetrics: boolean;
+	includeYamlFrontmatter: boolean;
+}
+
 export interface ExtensionSettings {
 	apiBaseUrl: string;
 	defaultModel: string;
 	lastKnownModels: string[];
+	markdownExport: MarkdownExportSettings;
 }
+
+export interface ExtensionSettingsInput {
+	apiBaseUrl?: string | null;
+	defaultModel?: string | null;
+	lastKnownModels?: readonly string[] | null;
+	markdownExport?: Partial<MarkdownExportSettings> | null;
+}
+
+export const DEFAULT_MARKDOWN_EXPORT_SETTINGS: MarkdownExportSettings = {
+	includeExplanation: true,
+	includeSelections: true,
+	includeRawResponse: false,
+	includeArticleMetadata: false,
+	includeUsageMetrics: false,
+	includeYamlFrontmatter: false,
+};
 
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
 	apiBaseUrl: DEFAULT_LOCAL_API_BASE_URL,
 	defaultModel: '',
 	lastKnownModels: [],
+	markdownExport: { ...DEFAULT_MARKDOWN_EXPORT_SETTINGS },
 };
 
 export function isValidLocalApiBaseUrl(value: string | null | undefined): boolean {
@@ -67,12 +94,38 @@ export function normalizeModelList(models: readonly string[] | null | undefined)
 	return normalizedModels;
 }
 
+export function mergeMarkdownExportSettings(
+	value: Partial<MarkdownExportSettings> | null | undefined,
+): MarkdownExportSettings {
+	return {
+		includeExplanation:
+			value?.includeExplanation ??
+			DEFAULT_MARKDOWN_EXPORT_SETTINGS.includeExplanation,
+		includeSelections:
+			value?.includeSelections ??
+			DEFAULT_MARKDOWN_EXPORT_SETTINGS.includeSelections,
+		includeRawResponse:
+			value?.includeRawResponse ??
+			DEFAULT_MARKDOWN_EXPORT_SETTINGS.includeRawResponse,
+		includeArticleMetadata:
+			value?.includeArticleMetadata ??
+			DEFAULT_MARKDOWN_EXPORT_SETTINGS.includeArticleMetadata,
+		includeUsageMetrics:
+			value?.includeUsageMetrics ??
+			DEFAULT_MARKDOWN_EXPORT_SETTINGS.includeUsageMetrics,
+		includeYamlFrontmatter:
+			value?.includeYamlFrontmatter ??
+			DEFAULT_MARKDOWN_EXPORT_SETTINGS.includeYamlFrontmatter,
+	};
+}
+
 export function mergeExtensionSettings(
-	value: Partial<ExtensionSettings> | null | undefined,
+	value: ExtensionSettingsInput | null | undefined,
 ): ExtensionSettings {
 	return {
 		apiBaseUrl: normalizeLocalApiBaseUrl(value?.apiBaseUrl),
 		defaultModel: value?.defaultModel?.trim() ?? '',
 		lastKnownModels: normalizeModelList(value?.lastKnownModels),
+		markdownExport: mergeMarkdownExportSettings(value?.markdownExport),
 	};
 }

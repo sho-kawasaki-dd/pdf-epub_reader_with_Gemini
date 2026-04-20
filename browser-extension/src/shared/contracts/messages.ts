@@ -407,6 +407,32 @@ export interface ClearSelectionBatchResponse {
   error?: string;
 }
 
+export interface ExportMarkdownPayload {
+  action: AnalysisAction;
+  pageTitle: string;
+  pageUrl: string;
+  modelName?: string;
+  translatedText?: string;
+  explanation?: string | null;
+  rawResponse?: string;
+  selectedText?: string;
+  sessionItems?: SelectionSessionItem[];
+  articleContext?: ArticleContext;
+  usage?: AnalyzeUsageMetrics;
+}
+
+export interface ExportMarkdownMessage {
+  type: 'phase5.exportMarkdown';
+  payload: ExportMarkdownPayload;
+}
+
+export interface ExportMarkdownResponse {
+  ok: boolean;
+  downloadId?: number;
+  filename?: string;
+  error?: string;
+}
+
 export type ContentScriptMessage =
   | CollectSelectionMessage
   | CollectArticleContextMessage
@@ -426,4 +452,5 @@ export type BackgroundRuntimeMessage =
   | ClearOverlaySessionMessage
   | OpenOverlayMessage
   | DeleteActiveArticleCacheMessage
-  | ClearSelectionBatchMessage;
+  | ClearSelectionBatchMessage
+  | ExportMarkdownMessage;
