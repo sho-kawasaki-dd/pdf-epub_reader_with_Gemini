@@ -46,6 +46,17 @@ describe('renderPopup', () => {
     expect(
       (
         document.querySelector(
+          '[data-role="markdown-export-section"]'
+        ) as HTMLDetailsElement
+      ).open
+    ).toBe(false);
+    expect(document.body.textContent).toContain(
+      'Default: explanation + selected text'
+    );
+
+    expect(
+      (
+        document.querySelector(
           '[data-role="include-explanation"]'
         ) as HTMLInputElement
       ).checked

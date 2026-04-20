@@ -204,6 +204,36 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         gap: 10px;
         margin-top: 10px;
       }
+      .details-section {
+        margin-top: 16px;
+        border: 1px solid rgba(120, 53, 15, 0.14);
+        border-radius: 14px;
+        background: rgba(255, 252, 244, 0.6);
+      }
+      .details-summary {
+        padding: 10px 14px;
+        cursor: pointer;
+        color: #92400e;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        list-style: none;
+        user-select: none;
+      }
+      .details-summary::-webkit-details-marker { display: none; }
+      .details-body {
+        padding: 0 14px 12px;
+      }
+      .details-summary-note {
+        display: block;
+        margin-top: 4px;
+        color: #78716c;
+        font-size: 11px;
+        font-weight: 400;
+        letter-spacing: normal;
+        text-transform: none;
+      }
       .checkbox-card {
         display: flex;
         gap: 10px;
@@ -332,54 +362,58 @@ export async function renderPopup(documentRef: Document): Promise<void> {
             <datalist id="model-options"></datalist>
             <p class="hint">Fetched models are suggested automatically, but a manual model ID is also allowed.</p>
           </div>
-          <div class="section">
-            <span class="label">Markdown Export</span>
-            <div class="checkbox-group">
-              <label class="checkbox-card" for="include-explanation">
-                <input class="checkbox-input" id="include-explanation" data-role="include-explanation" type="checkbox" />
-                <span class="checkbox-copy">
-                  <span class="checkbox-title">Include explanation</span>
-                  <span class="checkbox-hint">Enabled by default. Saves Gemini's explanation section when present.</span>
-                </span>
-              </label>
-              <label class="checkbox-card" for="include-selections">
-                <input class="checkbox-input" id="include-selections" data-role="include-selections" type="checkbox" />
-                <span class="checkbox-copy">
-                  <span class="checkbox-title">Include selected source text</span>
-                  <span class="checkbox-hint">Enabled by default. Lists the current batch selections before the answer body.</span>
-                </span>
-              </label>
-              <label class="checkbox-card" for="include-raw-response">
-                <input class="checkbox-input" id="include-raw-response" data-role="include-raw-response" type="checkbox" />
-                <span class="checkbox-copy">
-                  <span class="checkbox-title">Include raw response</span>
-                  <span class="checkbox-hint">Disabled by default. Adds the unprocessed Gemini response payload.</span>
-                </span>
-              </label>
-              <label class="checkbox-card" for="include-article-metadata">
-                <input class="checkbox-input" id="include-article-metadata" data-role="include-article-metadata" type="checkbox" />
-                <span class="checkbox-copy">
-                  <span class="checkbox-title">Include article metadata</span>
-                  <span class="checkbox-hint">Disabled by default. Adds source page metadata such as title, byline, and site name.</span>
-                </span>
-              </label>
-              <label class="checkbox-card" for="include-usage-metrics">
-                <input class="checkbox-input" id="include-usage-metrics" data-role="include-usage-metrics" type="checkbox" />
-                <span class="checkbox-copy">
-                  <span class="checkbox-title">Include usage metrics</span>
-                  <span class="checkbox-hint">Disabled by default. Adds token usage when the current result includes it.</span>
-                </span>
-              </label>
-              <label class="checkbox-card" for="include-yaml-frontmatter">
-                <input class="checkbox-input" id="include-yaml-frontmatter" data-role="include-yaml-frontmatter" type="checkbox" />
-                <span class="checkbox-copy">
-                  <span class="checkbox-title">Include YAML frontmatter</span>
-                  <span class="checkbox-hint">Disabled by default. Adds machine-readable metadata at the top of the file.</span>
-                </span>
-              </label>
+          <details class="details-section" data-role="markdown-export-section">
+            <summary class="details-summary">Markdown Export
+              <span class="details-summary-note">Default: explanation + selected text</span>
+            </summary>
+            <div class="details-body">
+              <div class="checkbox-group">
+                <label class="checkbox-card" for="include-explanation">
+                  <input class="checkbox-input" id="include-explanation" data-role="include-explanation" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Include explanation</span>
+                    <span class="checkbox-hint">Enabled by default. Saves Gemini's explanation section when present.</span>
+                  </span>
+                </label>
+                <label class="checkbox-card" for="include-selections">
+                  <input class="checkbox-input" id="include-selections" data-role="include-selections" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Include selected source text</span>
+                    <span class="checkbox-hint">Enabled by default. Lists the current batch selections before the answer body.</span>
+                  </span>
+                </label>
+                <label class="checkbox-card" for="include-raw-response">
+                  <input class="checkbox-input" id="include-raw-response" data-role="include-raw-response" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Include raw response</span>
+                    <span class="checkbox-hint">Disabled by default. Adds the unprocessed Gemini response payload.</span>
+                  </span>
+                </label>
+                <label class="checkbox-card" for="include-article-metadata">
+                  <input class="checkbox-input" id="include-article-metadata" data-role="include-article-metadata" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Include article metadata</span>
+                    <span class="checkbox-hint">Disabled by default. Adds source page metadata such as title, byline, and site name.</span>
+                  </span>
+                </label>
+                <label class="checkbox-card" for="include-usage-metrics">
+                  <input class="checkbox-input" id="include-usage-metrics" data-role="include-usage-metrics" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Include usage metrics</span>
+                    <span class="checkbox-hint">Disabled by default. Adds token usage when the current result includes it.</span>
+                  </span>
+                </label>
+                <label class="checkbox-card" for="include-yaml-frontmatter">
+                  <input class="checkbox-input" id="include-yaml-frontmatter" data-role="include-yaml-frontmatter" type="checkbox" />
+                  <span class="checkbox-copy">
+                    <span class="checkbox-title">Include YAML frontmatter</span>
+                    <span class="checkbox-hint">Disabled by default. Adds machine-readable metadata at the top of the file.</span>
+                  </span>
+                </label>
+              </div>
+              <p class="hint">Default export saves answer body, explanation, and selected text. Filename rule is page title plus timestamp.</p>
             </div>
-            <p class="hint">Default export saves answer body, explanation, and selected text. Filename rule is page title plus timestamp.</p>
-          </div>
+          </details>
           <div class="section button-row">
             <button class="button button-secondary" type="button" data-role="refresh-button">Refresh</button>
             <button class="button button-primary" type="submit" data-role="save-button">Save</button>
