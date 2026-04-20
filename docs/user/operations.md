@@ -76,6 +76,8 @@ Available entry points:
 - `Run Custom Prompt`
 
 1. Optionally enter a different model ID in the overlay before rerunning.
+1. When the Gemini tab shows a successful result, use `Download Markdown` to save the current batch result to the browser download folder.
+1. If you want to change what the Markdown file includes, update the popup `Markdown export` settings and export again.
 1. Use the keyboard bindings when the overlay is visible:
 
 - `Esc`: minimize the overlay
@@ -87,12 +89,13 @@ Available entry points:
 
 1. Use the minimize button or `Esc` if you want to keep the current session available while reducing the overlay footprint.
 
-Current Phase 3 scope:
+Current browser extension scope:
 
 - Batch sessions across multiple text selections
 - Free-rectangle capture mode
 - Popup-managed local API URL and default model
 - Overlay reruns for translation, explanation, and custom prompt
+- Markdown export from the overlay Gemini tab
 - Keyboard-first cached-session reopen and rerun flow
 - Clear-all batch shortcut (keyboard and browser command)
 

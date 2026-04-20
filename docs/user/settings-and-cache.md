@@ -35,6 +35,23 @@ These are separate settings.
 - UI language changes menus, buttons, and visible application text.
 - AI output language changes the language requested from Gemini.
 
+## Browser Extension Popup Settings
+
+The browser extension popup also stores Markdown export preferences.
+
+Available toggles:
+
+- Explanation
+- Selected source text
+- Raw response
+- Article metadata
+- Usage metrics
+- YAML frontmatter
+
+Default export behavior keeps `Explanation` and `Selected source text` enabled, while raw response, article metadata, usage metrics, and YAML frontmatter stay off until you opt in.
+
+These popup settings control the `Download Markdown` action in the overlay Gemini tab. Exporting again after changing a toggle uses the updated popup state.
+
 ## Context Cache
 
 Context cache stores the full extracted document text on the Gemini side for repeated analysis requests.
