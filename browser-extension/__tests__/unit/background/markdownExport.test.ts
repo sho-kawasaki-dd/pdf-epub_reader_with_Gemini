@@ -179,12 +179,6 @@ describe('markdownExport', () => {
 
   it('downloads markdown with a generated filename', async () => {
     const chromeMock = getChromeMock();
-    const createObjectURL = vi.fn().mockReturnValue('blob:markdown-export');
-    const revokeObjectURL = vi.fn();
-    vi.stubGlobal('URL', {
-      createObjectURL,
-      revokeObjectURL,
-    });
     (
       chromeMock.downloads.download as unknown as ReturnType<typeof vi.fn>
     ).mockImplementation((_options, callback) => {
@@ -199,6 +193,7 @@ describe('markdownExport', () => {
 
     expect(chromeMock.downloads.download).toHaveBeenCalledWith(
       expect.objectContaining({
+        url: 'data:text/markdown;charset=utf-8,%23%20Export',
         filename: 'Example article-20260420-103045.md',
         saveAs: false,
         conflictAction: 'uniquify',
@@ -209,18 +204,10 @@ describe('markdownExport', () => {
       downloadId: 88,
       filename: 'Example article-20260420-103045.md',
     });
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:markdown-export');
   });
 
   it('maps chrome.downloads failures to a typed error message', async () => {
     const chromeMock = getChromeMock();
-    const createObjectURL = vi.fn().mockReturnValue('blob:markdown-export');
-    const revokeObjectURL = vi.fn();
-    vi.stubGlobal('URL', {
-      createObjectURL,
-      revokeObjectURL,
-    });
     (
       chromeMock.downloads.download as unknown as ReturnType<typeof vi.fn>
     ).mockImplementation((_options, callback) => {
@@ -238,7 +225,5 @@ describe('markdownExport', () => {
         exportedAt: new Date(2026, 3, 20, 10, 30, 45),
       })
     ).rejects.toThrow('Markdown download failed: The download was blocked.');
-
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:markdown-export');
   });
 });

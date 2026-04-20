@@ -14,45 +14,36 @@ export async function downloadMarkdownFile(
 ): Promise<DownloadMarkdownFileResult> {
   const exportedAt = options.exportedAt ?? new Date();
   const filename = buildMarkdownFilename(options.pageTitle, exportedAt);
-  const url = URL.createObjectURL(
-    new Blob([options.markdown], { type: 'text/markdown;charset=utf-8' })
-  );
-
-  try {
-    const downloadId = await new Promise<number>((resolve, reject) => {
-      chrome.downloads.download(
-        {
-          url,
-          filename,
-          saveAs: false,
-          conflictAction: 'uniquify',
-        },
-        (result) => {
-          const lastError = chrome.runtime.lastError;
-          if (lastError) {
-            reject(new Error(`Markdown download failed: ${lastError.message}`));
-            return;
-          }
-
-          if (typeof result !== 'number') {
-            reject(
-              new Error('Markdown download did not return a download id.')
-            );
-            return;
-          }
-
-          resolve(result);
+  const url = buildMarkdownDataUrl(options.markdown);
+  const downloadId = await new Promise<number>((resolve, reject) => {
+    chrome.downloads.download(
+      {
+        url,
+        filename,
+        saveAs: false,
+        conflictAction: 'uniquify',
+      },
+      (result) => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          reject(new Error(`Markdown download failed: ${lastError.message}`));
+          return;
         }
-      );
-    });
 
-    return {
-      downloadId,
-      filename,
-    };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+        if (typeof result !== 'number') {
+          reject(new Error('Markdown download did not return a download id.'));
+          return;
+        }
+
+        resolve(result);
+      }
+    );
+  });
+
+  return {
+    downloadId,
+    filename,
+  };
 }
 
 export function buildMarkdownFilename(
@@ -73,6 +64,10 @@ export function sanitizePageTitle(pageTitle: string): string {
     .trim();
 
   return sanitized || 'gem-read-export';
+}
+
+function buildMarkdownDataUrl(markdown: string): string {
+  return `data:text/markdown;charset=utf-8,${encodeURIComponent(markdown)}`;
 }
 
 function formatTimestamp(date: Date): string {
