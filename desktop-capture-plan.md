@@ -10,11 +10,11 @@ PC 版 Kindle や楽天 Kobo Desktop など、DRM 管理下のデスクトップ
 
 ## 解決したい問題
 
-| 問題 | 現状のギャップ |
-|---|---|
-| Kindle/Kobo は PDF/EPUB ファイルを直接開けない | 既存の `pdf_epub_reader` は PyMuPDF 前提 |
+| 問題                                               | 現状のギャップ                                 |
+| -------------------------------------------------- | ---------------------------------------------- |
+| Kindle/Kobo は PDF/EPUB ファイルを直接開けない     | 既存の `pdf_epub_reader` は PyMuPDF 前提       |
 | DRM 書籍のテキストはクリップボード経由で取りにくい | DOM アクセス・Accessibility API は信頼性が低い |
-| 画面上の文章をそのまま翻訳・解説したい | ブラウザ拡張は Web ページ専用 |
+| 画面上の文章をそのまま翻訳・解説したい             | ブラウザ拡張は Web ページ専用                  |
 
 ---
 
@@ -49,13 +49,13 @@ src/
 
 ### 既存資産の再利用マップ
 
-| 既存コード | desktop_capture での使い方 |
-|---|---|
-| `pdf_epub_reader.models.ai_model.AIModel` | そのまま `import` して Gemini 解析に使用 |
-| `pdf_epub_reader.dto.AnalysisRequest/Result` | OCR テキスト + crop 画像を詰めて渡す |
-| `pdf_epub_reader.utils.config.AppConfig` | `ocr_backend` フィールドを 1 つ追加して共用 |
-| `pdf_epub_reader.utils.config.load_config/save_config` | 設定ファイルの読み書きをそのまま使用 |
-| `qasync` イベントループ統合 | `pdf_epub_reader.infrastructure.event_loop` を参照して同じパターンで実装 |
+| 既存コード                                             | desktop_capture での使い方                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| `pdf_epub_reader.models.ai_model.AIModel`              | そのまま `import` して Gemini 解析に使用                                 |
+| `pdf_epub_reader.dto.AnalysisRequest/Result`           | OCR テキスト + crop 画像を詰めて渡す                                     |
+| `pdf_epub_reader.utils.config.AppConfig`               | `ocr_backend` フィールドを 1 つ追加して共用                              |
+| `pdf_epub_reader.utils.config.load_config/save_config` | 設定ファイルの読み書きをそのまま使用                                     |
+| `qasync` イベントループ統合                            | `pdf_epub_reader.infrastructure.event_loop` を参照して同じパターンで実装 |
 
 ブラウザ拡張の矩形選択ロジック（[browser-extension/src/content/selection/rectangleSelectionController.ts](browser-extension/src/content/selection/rectangleSelectionController.ts)）と crop 処理（[browser-extension/src/background/services/cropSelectionImage.ts](browser-extension/src/background/services/cropSelectionImage.ts)）は、Python 版実装の設計見本として参照する。
 
@@ -158,23 +158,23 @@ ocr_backend: Literal["windows", "rapidocr"] = "windows"
 
 ## 依存追加の一覧
 
-| パッケージ | 用途 | フェーズ | 備考 |
-|---|---|---|---|
-| `mss` | 高速スクリーンショット | Phase 1 | `PIL.ImageGrab` でも代替可 |
-| `keyboard` | グローバルホットキー | Phase 1 | `pynput` でも代替可 |
-| `winsdk` or `winrt` | Windows OCR API バインディング | Phase 2 | Python 3.13 対応要確認 |
-| `rapidocr-onnxruntime` | RapidOCR | Phase 3 | optional dependency |
+| パッケージ             | 用途                           | フェーズ | 備考                       |
+| ---------------------- | ------------------------------ | -------- | -------------------------- |
+| `mss`                  | 高速スクリーンショット         | Phase 1  | `PIL.ImageGrab` でも代替可 |
+| `keyboard`             | グローバルホットキー           | Phase 1  | `pynput` でも代替可        |
+| `winsdk` or `winrt`    | Windows OCR API バインディング | Phase 2  | Python 3.13 対応要確認     |
+| `rapidocr-onnxruntime` | RapidOCR                       | Phase 3  | optional dependency        |
 
 ---
 
 ## 技術リスクと対策
 
-| リスク | 対策 |
-|---|---|
-| `winsdk` が Python 3.13 非対応 | `comtypes` 経由の WinRT 呼び出しで代替。または Phase 3 の RapidOCR を先行実装 |
+| リスク                                                     | 対策                                                                           |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `winsdk` が Python 3.13 非対応                             | `comtypes` 経由の WinRT 呼び出しで代替。または Phase 3 の RapidOCR を先行実装  |
 | Kindle/Kobo の画面キャプチャがブロックされる（DRM の場合） | Phase 1 の PoC で早期確認。ブロックされる場合は DWM API 経由のキャプチャを検討 |
-| RapidOCR の日本語精度が用途に不十分 | Windows OCR との並走テストで比較し、モデルを差し替えるか PaddleOCR に切り替え |
-| フォントが小さい / ルビ混じりで OCR が崩れる | Pillow で前処理（二値化・アップスケール）を `screenshot.py` に挟む |
+| RapidOCR の日本語精度が用途に不十分                        | Windows OCR との並走テストで比較し、モデルを差し替えるか PaddleOCR に切り替え  |
+| フォントが小さい / ルビ混じりで OCR が崩れる               | Pillow で前処理（二値化・アップスケール）を `screenshot.py` に挟む             |
 
 ---
 
