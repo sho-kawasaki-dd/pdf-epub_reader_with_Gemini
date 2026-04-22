@@ -1,5 +1,5 @@
 import { MAX_SELECTION_SESSION_ITEMS } from '../../shared/config/phase0';
-import type { ExtensionSettings } from '../../shared/config/phase0';
+import type { ExtensionSettings, UiLanguage } from '../../shared/config/phase0';
 import type {
   ModelOption,
   OverlayPayload,
@@ -8,6 +8,7 @@ import type {
   SelectionSessionSource,
 } from '../../shared/contracts/messages';
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
+import { t } from '../../shared/i18n/translator';
 import {
   collectSelection,
   renderOverlay,
@@ -30,24 +31,28 @@ export async function appendSelectionSessionItem(
   selection: SelectionCapturePayload,
   source: SelectionSessionSource
 ): Promise<SelectionSessionItem> {
+  const settings = await loadExtensionSettings();
   const tabId = tab.id;
   if (tabId === undefined) {
-    throw new Error('Active tab could not be resolved.');
+    throw new Error(t(settings.uiLanguage, 'bgErrorNoActiveTab'));
   }
 
   const existingSession = await getAnalysisSession(tabId);
   if ((existingSession?.items.length ?? 0) >= MAX_SELECTION_SESSION_ITEMS) {
-    throw new Error(
-      `You can keep up to ${MAX_SELECTION_SESSION_ITEMS} selections in one batch.`
-    );
+    throw new Error(t(settings.uiLanguage, 'overlayErrorBatchLimit', {
+      count: MAX_SELECTION_SESSION_ITEMS,
+    }));
   }
 
-  const windowId = await resolveTabWindowId(tab);
+  const windowId = await resolveTabWindowId(tab, settings);
   const screenshotDataUrl = await chrome.tabs.captureVisibleTab(windowId, {
     format: 'png',
   });
-  const cropResult = await cropSelectionImage(screenshotDataUrl, selection);
-  const settings = await loadExtensionSettings();
+  const cropResult = await cropSelectionImage(
+    screenshotDataUrl,
+    selection,
+    settings.uiLanguage
+  );
 
   const nextItem: SelectionSessionItem = {
     id: createSessionItemId(source),
@@ -80,24 +85,28 @@ export async function appendSelectionSessionItem(
   });
 
   await setAnalysisSession(tabId, tokenAwareSession);
-  await renderOverlay(tabId, buildOverlayPayload(tokenAwareSession));
+  await renderOverlay(
+    tabId,
+    buildOverlayPayload(tokenAwareSession, {
+      uiLanguage: settings.uiLanguage,
+    })
+  );
   return nextItem;
 }
 
 export async function appendLiveSelectionSessionItem(
   tab: chrome.tabs.Tab
 ): Promise<SelectionSessionItem> {
+  const settings = await loadExtensionSettings();
   const tabId = tab.id;
   if (tabId === undefined) {
-    throw new Error('Active tab could not be resolved.');
+    throw new Error(t(settings.uiLanguage, 'bgErrorNoActiveTab'));
   }
 
   const selection = await collectSelection(tabId, '', { liveOnly: true });
   if (!selection.ok || !selection.payload) {
     const message =
-      selection.error ??
-      'A live text selection is required. Select text on the page and try again.';
-    const settings = await loadExtensionSettings();
+      selection.error ?? t(settings.uiLanguage, 'bgErrorLiveSelectionRequired');
     const session = await getAnalysisSession(tabId);
     // live selection が取れないときも、既存 batch や draft を消さずに overlay 上へ明示エラーだけ返す。
     await renderOverlay(
@@ -108,6 +117,7 @@ export async function appendLiveSelectionSessionItem(
             error: message,
             launcherOnly: false,
             preserveDrafts: true,
+            uiLanguage: settings.uiLanguage,
           })
         : buildEmptyOverlayPayload(settings, {
             status: 'error',
@@ -133,7 +143,8 @@ export async function removeSelectionSessionItem(
 
   const nextItems = session.items.filter((item) => item.id !== itemId);
   if (nextItems.length === session.items.length) {
-    throw new Error('Selection item could not be found.');
+    const settings = await loadExtensionSettings();
+    throw new Error(t(settings.uiLanguage, 'bgErrorItemNotFound'));
   }
 
   if (nextItems.length === 0) {
@@ -144,7 +155,13 @@ export async function removeSelectionSessionItem(
     };
     // batch が空でも article context / cache 状態は残し、overlay reopen や次回追加時の文脈を失わないようにする。
     await setAnalysisSession(tabId, emptyBatchSession);
-    await renderOverlay(tabId, buildOverlayPayload(emptyBatchSession));
+    const settings = await loadExtensionSettings();
+    await renderOverlay(
+      tabId,
+      buildOverlayPayload(emptyBatchSession, {
+        uiLanguage: settings.uiLanguage,
+      })
+    );
     return;
   }
 
@@ -161,7 +178,12 @@ export async function removeSelectionSessionItem(
   });
 
   await setAnalysisSession(tabId, tokenAwareSession);
-  await renderOverlay(tabId, buildOverlayPayload(tokenAwareSession));
+  await renderOverlay(
+    tabId,
+    buildOverlayPayload(tokenAwareSession, {
+      uiLanguage: settings.uiLanguage,
+    })
+  );
 }
 
 export async function toggleSelectionSessionItemImage(
@@ -169,9 +191,10 @@ export async function toggleSelectionSessionItemImage(
   itemId: string,
   includeImage: boolean
 ): Promise<void> {
+  const settings = await loadExtensionSettings();
   const session = await getAnalysisSession(tabId);
   if (!session) {
-    throw new Error('Analysis session could not be found.');
+    throw new Error(t(settings.uiLanguage, 'bgErrorSelectionSessionMissing'));
   }
 
   let foundItem = false;
@@ -182,9 +205,7 @@ export async function toggleSelectionSessionItemImage(
 
     foundItem = true;
     if (includeImage && !item.previewImageUrl) {
-      throw new Error(
-        'A cached crop preview is required before enabling image inclusion.'
-      );
+      throw new Error(t(settings.uiLanguage, 'bgErrorImagePreviewRequired'));
     }
 
     return {
@@ -194,7 +215,7 @@ export async function toggleSelectionSessionItemImage(
   });
 
   if (!foundItem) {
-    throw new Error('Selection item could not be found.');
+    throw new Error(t(settings.uiLanguage, 'bgErrorItemNotFound'));
   }
 
   const nextSession: SelectionAnalysisSession = {
@@ -203,14 +224,18 @@ export async function toggleSelectionSessionItemImage(
     modelOptions: [...session.modelOptions],
   };
 
-  const settings = await loadExtensionSettings();
   const tokenAwareSession = await syncPayloadTokenEstimate(nextSession, {
     apiBaseUrl: settings.apiBaseUrl,
     modelName: nextSession.lastModelName || settings.defaultModel || undefined,
   });
 
   await setAnalysisSession(tabId, tokenAwareSession);
-  await renderOverlay(tabId, buildOverlayPayload(tokenAwareSession));
+  await renderOverlay(
+    tabId,
+    buildOverlayPayload(tokenAwareSession, {
+      uiLanguage: settings.uiLanguage,
+    })
+  );
 }
 
 export function buildOverlayPayload(
@@ -220,12 +245,14 @@ export function buildOverlayPayload(
     error?: string;
     launcherOnly?: boolean;
     preserveDrafts?: boolean;
+    uiLanguage?: UiLanguage;
   } = {}
 ): OverlayPayload {
   const latestItem = getLatestSelectionItem(session);
 
   return {
     status: options.status ?? 'success',
+    uiLanguage: options.uiLanguage,
     action: session.lastAction,
     modelName: session.lastModelName,
     modelOptions: [...session.modelOptions],
@@ -262,10 +289,12 @@ export function buildEmptyOverlayPayload(
     error?: string;
     launcherOnly?: boolean;
     preserveDrafts?: boolean;
+    uiLanguage?: UiLanguage;
   } = {}
 ): OverlayPayload {
   return {
     status: options.status ?? 'success',
+    uiLanguage: options.uiLanguage ?? settings.uiLanguage,
     modelName: settings.defaultModel || undefined,
     modelOptions: settings.lastKnownModels.map((modelId) => ({
       modelId,
@@ -318,25 +347,34 @@ export async function clearSelectionBatch(tabId: number): Promise<void> {
 
   // clear は batch だけを落とし、article cache や設定文脈は残す。
   await setAnalysisSession(tabId, emptyBatchSession);
-  await renderOverlay(tabId, buildOverlayPayload(emptyBatchSession));
+  const settings = await loadExtensionSettings();
+  await renderOverlay(
+    tabId,
+    buildOverlayPayload(emptyBatchSession, {
+      uiLanguage: settings.uiLanguage,
+    })
+  );
 }
 
 function createSessionItemId(source: SelectionSessionSource): string {
   return `${source}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function resolveTabWindowId(tab: chrome.tabs.Tab): Promise<number> {
+async function resolveTabWindowId(
+  tab: chrome.tabs.Tab,
+  settings: ExtensionSettings
+): Promise<number> {
   if (tab.windowId !== undefined) {
     return tab.windowId;
   }
 
   if (tab.id === undefined) {
-    throw new Error('Active tab window could not be resolved.');
+    throw new Error(t(settings.uiLanguage, 'bgErrorActiveTabWindow'));
   }
 
   const resolvedTab = await chrome.tabs.get(tab.id);
   if (resolvedTab.windowId === undefined) {
-    throw new Error('Active tab window could not be resolved.');
+    throw new Error(t(settings.uiLanguage, 'bgErrorActiveTabWindow'));
   }
 
   return resolvedTab.windowId;

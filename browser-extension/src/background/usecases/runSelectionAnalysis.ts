@@ -1,6 +1,7 @@
 import {
   MAX_SELECTION_SESSION_ITEMS,
   type ExtensionSettings,
+  type UiLanguage,
 } from '../../shared/config/phase0';
 import type {
   AnalysisAction,
@@ -10,6 +11,7 @@ import type {
   SelectionSessionItem,
 } from '../../shared/contracts/messages';
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
+import { t } from '../../shared/i18n/translator';
 import { sendAnalyzeTranslateRequest } from '../gateways/localApiGateway';
 import {
   collectArticleContext,
@@ -29,9 +31,6 @@ import {
 } from '../services/articleCacheService';
 import { cropSelectionImage } from '../services/cropSelectionImage';
 import { syncPayloadTokenEstimate } from '../services/payloadTokenService';
-
-const REMOTE_MISSING_CACHE_NOTICE =
-  'The server-side article cache could not be found, so this request completed without cache.';
 
 export interface RunSelectionAnalysisOptions {
   action?: AnalysisAction;
@@ -71,6 +70,7 @@ export async function runSelectionAnalysis(
     // loading を先に描画して、selection 取得や crop の待ち時間でも UI 上の文脈を保つ。
     await renderOverlay(tabId, {
       status: 'loading',
+      uiLanguage: settings.uiLanguage,
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
@@ -99,7 +99,8 @@ export async function runSelectionAnalysis(
       resolvedRequestOptions.apiBaseUrl,
       resolvedRequestOptions.modelName,
       settings.articleCache.enableAutoCreate,
-      cachedSession
+      cachedSession,
+      settings.uiLanguage
     );
     const sessionItem = getRequiredSessionItem(session);
 
@@ -116,7 +117,7 @@ export async function runSelectionAnalysis(
         ? await invalidateArticleCache(session, {
             apiBaseUrl: resolvedRequestOptions.apiBaseUrl,
             reason: 'remote-missing',
-            notice: REMOTE_MISSING_CACHE_NOTICE,
+            notice: t(settings.uiLanguage, 'bgNoticeRemoteMissing'),
           })
         : session;
 
@@ -130,6 +131,7 @@ export async function runSelectionAnalysis(
 
     await renderOverlay(tabId, {
       status: 'success',
+      uiLanguage: settings.uiLanguage,
       action: apiResponse.mode,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
@@ -157,10 +159,13 @@ export async function runSelectionAnalysis(
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : '不明なエラーが発生しました。';
+      error instanceof Error
+        ? error.message
+        : t(settings.uiLanguage, 'bgErrorOverlayAction');
     const availableSession = reusableSession ?? (await getCachedSession(tabId));
     await renderOverlay(tabId, {
       status: 'error',
+      uiLanguage: settings.uiLanguage,
       action: resolvedRequestOptions.action,
       modelName: resolvedRequestOptions.modelName,
       modelOptions,
@@ -189,7 +194,8 @@ async function resolveAnalysisSession(
   apiBaseUrl: string,
   modelName: string | undefined,
   autoCreateEnabled: boolean,
-  cachedSession: SelectionAnalysisSession | undefined
+  cachedSession: SelectionAnalysisSession | undefined,
+  uiLanguage: UiLanguage
 ): Promise<SelectionAnalysisSession> {
   if (reuseCachedSession) {
     const session = await getCachedSession(tabId);
@@ -201,7 +207,7 @@ async function resolveAnalysisSession(
           error:
             error instanceof Error
               ? error.message
-              : 'Article context extraction failed.',
+              : t(uiLanguage, 'overlayArticleExtractionUnavailable'),
         })
       );
       const refreshedSession = await syncArticleCacheState(
@@ -224,9 +230,7 @@ async function resolveAnalysisSession(
       return tokenAwareSession;
     }
 
-    throw new Error(
-      '解析セッションが見つかりません。新しい選択を追加してから再実行してください。'
-    );
+    throw new Error(t(uiLanguage, 'bgErrorSelectionSessionMissing'));
   }
 
   return createFreshSession(
@@ -237,7 +241,8 @@ async function resolveAnalysisSession(
     apiBaseUrl,
     modelName,
     autoCreateEnabled,
-    cachedSession
+    cachedSession,
+    uiLanguage
   );
 }
 
@@ -249,7 +254,8 @@ async function createFreshSession(
   apiBaseUrl: string,
   modelName: string | undefined,
   autoCreateEnabled: boolean,
-  cachedSession: SelectionAnalysisSession | undefined
+  cachedSession: SelectionAnalysisSession | undefined,
+  uiLanguage: UiLanguage
 ): Promise<SelectionAnalysisSession> {
   const [selection, articleContextResult] = await Promise.all([
     collectSelection(tabId, fallbackSelectionText),
@@ -258,11 +264,11 @@ async function createFreshSession(
       error:
         error instanceof Error
           ? error.message
-          : 'Article context extraction failed.',
+          : t(uiLanguage, 'overlayArticleExtractionUnavailable'),
     })),
   ]);
   if (!selection.ok || !selection.payload) {
-    throw new Error(selection.error ?? '選択テキストを取得できませんでした。');
+    throw new Error(selection.error ?? t(uiLanguage, 'bgErrorSelectionUnavailable'));
   }
 
   // browser 提供の selectionText は整形差があるため、座標は content script、文字列は fallback と live snapshot の両方を見る。
@@ -277,7 +283,8 @@ async function createFreshSession(
   // crop は browser 側で済ませ、Python には必要最小限の画像だけを送る。
   const cropResult = await cropSelectionImage(
     screenshotDataUrl,
-    resolvedSelection
+    resolvedSelection,
+    uiLanguage
   );
 
   const session: SelectionAnalysisSession = {
@@ -363,7 +370,7 @@ function getRequiredSessionItem(session: SelectionAnalysisSession) {
   const item = getLatestSelectionItem(session);
   if (!item) {
     throw new Error(
-      '解析セッションが見つかりません。選択し直してから再実行してください。'
+      'Analysis session could not be found.'
     );
   }
   return item;

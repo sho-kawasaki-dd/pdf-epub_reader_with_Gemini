@@ -1,3 +1,4 @@
+import { t } from '../../shared/i18n/translator';
 import { loadExtensionSettings } from '../../shared/storage/settingsStorage';
 import {
   collectArticleContext,
@@ -32,7 +33,7 @@ export async function openOverlaySession(tabId: number): Promise<void> {
         error:
           error instanceof Error
             ? error.message
-            : 'Article context extraction failed.',
+            : t(settings.uiLanguage, 'overlayArticleExtractionUnavailable'),
       })
     );
     const refreshedSession = await syncArticleCacheState(
@@ -61,6 +62,7 @@ export async function openOverlaySession(tabId: number): Promise<void> {
         buildOverlayPayload(tokenAwareSession, {
           launcherOnly: false,
           preserveDrafts: true,
+          uiLanguage: settings.uiLanguage,
         })
       );
       return;
@@ -73,6 +75,7 @@ export async function openOverlaySession(tabId: number): Promise<void> {
     buildEmptyOverlayPayload(settings, {
       launcherOnly: true,
       preserveDrafts: true,
+      uiLanguage: settings.uiLanguage,
     })
   );
 }

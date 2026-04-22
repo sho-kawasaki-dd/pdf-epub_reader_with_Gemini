@@ -213,6 +213,43 @@ describe('renderOverlay', () => {
     );
   });
 
+  it('renders different overlay copy for english and japanese uiLanguage values', () => {
+    const payload = {
+      status: 'success' as const,
+      action: 'translation' as const,
+      sessionItems: [],
+      maxSessionItems: 10,
+      sessionReady: true,
+      selectedText: 'Selected paragraph',
+      translatedText: 'Translated paragraph',
+      rawResponse: 'Translated paragraph',
+    };
+
+    renderOverlay({
+      ...payload,
+      uiLanguage: 'en',
+    });
+
+    let root = getShadowRoot();
+    expect(root.querySelector('.action-translation')?.textContent).toBe(
+      'Translate'
+    );
+    expect(root.querySelector('.action-export-markdown')?.textContent).toBe(
+      'Download Markdown'
+    );
+
+    renderOverlay({
+      ...payload,
+      uiLanguage: 'ja',
+    });
+
+    root = getShadowRoot();
+    expect(root.querySelector('.action-translation')?.textContent).toBe('翻訳');
+    expect(root.querySelector('.action-export-markdown')?.textContent).toBe(
+      'Markdown を保存'
+    );
+  });
+
   it('auto-opens the Gemini tab when a fresh successful response arrives', () => {
     renderOverlay({
       status: 'loading',

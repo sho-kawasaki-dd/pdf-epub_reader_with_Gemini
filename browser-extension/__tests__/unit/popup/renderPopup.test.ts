@@ -318,13 +318,22 @@ describe('renderPopup', () => {
     );
     await settle();
 
-    expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
+    const savedSettingsCall = (
+      chromeMock.storage.local.set as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.findLast(
+      ([items]) =>
+        items?.[EXTENSION_SETTINGS_STORAGE_KEY]?.apiBaseUrl ===
+        'http://localhost:9001'
+    );
+
+    expect(savedSettingsCall).toEqual([
       {
         [EXTENSION_SETTINGS_STORAGE_KEY]: {
           apiBaseUrl: 'http://localhost:9001',
           defaultModel: 'gemini-2.5-pro',
           sharedSystemPrompt: '  Shared instructions.\nPreserve spacing.  ',
           lastKnownModels: ['gemini-2.5-flash'],
+          uiLanguage: 'en',
           articleCache: {
             enableAutoCreate: false,
           },
@@ -338,8 +347,8 @@ describe('renderPopup', () => {
           },
         },
       },
-      expect.any(Function)
-    );
+      expect.any(Function),
+    ]);
     expect(
       document.querySelector('[data-role="message-line"]')?.textContent
     ).toContain('Settings saved.');

@@ -2,8 +2,10 @@ import {
   OUTPUT_IMAGE_QUALITY,
   OUTPUT_IMAGE_TYPE,
   OUTPUT_MAX_LONG_EDGE,
+  type UiLanguage,
 } from '../../shared/config/phase0';
 import type { SelectionCapturePayload } from '../../shared/contracts/messages';
+import { t } from '../../shared/i18n/translator';
 
 /**
  * viewport 座標の selection を screenshot bitmap に合わせて crop/resize し、
@@ -12,7 +14,8 @@ import type { SelectionCapturePayload } from '../../shared/contracts/messages';
  */
 export async function cropSelectionImage(
   screenshotDataUrl: string,
-  selection: SelectionCapturePayload
+  selection: SelectionCapturePayload,
+  uiLanguage: UiLanguage = 'en'
 ): Promise<{ imageDataUrl: string; durationMs: number }> {
   const startedAt = performance.now();
   const imageBlob = await fetch(screenshotDataUrl).then((response) =>
@@ -37,7 +40,7 @@ export async function cropSelectionImage(
   );
 
   if (sourceWidth <= 0 || sourceHeight <= 0) {
-    throw new Error('選択範囲の crop 座標が無効です。');
+    throw new Error(t(uiLanguage, 'bgErrorInvalidCrop'));
   }
 
   // 長辺だけを抑えて、可読性を大きく落とさずに転送量と Gemini 入力コストを下げる。
@@ -48,9 +51,7 @@ export async function cropSelectionImage(
   const canvas = new OffscreenCanvas(outputWidth, outputHeight);
   const context = canvas.getContext('2d');
   if (!context) {
-    throw new Error(
-      'OffscreenCanvas の 2D コンテキストを取得できませんでした。'
-    );
+    throw new Error(t(uiLanguage, 'bgErrorOffscreenContext'));
   }
 
   context.imageSmoothingEnabled = true;

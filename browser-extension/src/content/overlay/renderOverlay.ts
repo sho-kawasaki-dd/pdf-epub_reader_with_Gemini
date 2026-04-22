@@ -1,4 +1,7 @@
-import { MAX_SELECTION_SESSION_ITEMS } from '../../shared/config/phase0';
+import {
+  MAX_SELECTION_SESSION_ITEMS,
+  type UiLanguage,
+} from '../../shared/config/phase0';
 import type {
   AppendSessionItemResponse,
   BeginRectangleSelectionResponse,
@@ -7,6 +10,7 @@ import type {
   OverlayPayload,
   SelectionSessionItem,
 } from '../../shared/contracts/messages';
+import { t } from '../../shared/i18n/translator';
 import { renderRichText } from './richTextRenderer';
 import {
   isRectangleSelectionActive,
@@ -47,6 +51,21 @@ let isRawResponseExpanded = false;
 let activeOverlayTab: OverlayTabId = 'workspace';
 let currentOverlayPayload: OverlayPayload | null = null;
 let keyboardHandlerAttached = false;
+
+function getOverlayLanguage(
+  payload?: OverlayPayload | null | undefined
+): UiLanguage {
+  const resolved = payload?.uiLanguage ?? currentOverlayPayload?.uiLanguage;
+  return resolved === 'ja' ? 'ja' : 'en';
+}
+
+function overlayText(
+  key: Parameters<typeof t>[1],
+  params?: Record<string, string | number>,
+  payload?: OverlayPayload | null
+): string {
+  return t(getOverlayLanguage(payload), key, params);
+}
 
 /**
  * Overlay は content script 側で一元管理し、payload から都度 DOM を再構築する。
@@ -215,7 +234,8 @@ export function renderOverlay(payload: OverlayPayload): void {
   const previewImageUrl =
     effectivePayload.previewImageUrl ?? latestSessionItem?.previewImageUrl;
 
-  selectionBox.textContent = selectionText || 'No selection text captured.';
+  selectionBox.textContent =
+    selectionText || overlayText('overlayEmptySelectionText', undefined, effectivePayload);
 
   previewSection.hidden = !previewImageUrl;
   if (previewImageUrl) {
@@ -282,8 +302,8 @@ export function renderOverlay(payload: OverlayPayload): void {
     isRectangleModeActive
   );
   actionHint.textContent = actionsEnabled
-    ? 'Reuse the cached batch with a different action or model. Press Alt+R to rerun the last action or Ctrl+Enter in the custom prompt box to submit.'
-    : 'Select text and run Gem Read once before action buttons become available. Press Alt+Backspace to clear all selections.';
+    ? overlayText('overlayActionHintReady', undefined, effectivePayload)
+    : overlayText('overlayActionHintUnavailable', undefined, effectivePayload);
 
   metaBox.textContent = buildMetaText(effectivePayload);
   metaBox.classList.toggle('loading', effectivePayload.status === 'loading');
@@ -306,6 +326,7 @@ export function renderOverlay(payload: OverlayPayload): void {
       'translation',
       modelInput.value,
       customPromptInput.value,
+      getOverlayLanguage(effectivePayload),
       errorBox,
       errorSection
     );
@@ -315,6 +336,7 @@ export function renderOverlay(payload: OverlayPayload): void {
       'translation_with_explanation',
       modelInput.value,
       customPromptInput.value,
+      getOverlayLanguage(effectivePayload),
       errorBox,
       errorSection
     );
@@ -324,6 +346,7 @@ export function renderOverlay(payload: OverlayPayload): void {
       'custom_prompt',
       modelInput.value,
       customPromptInput.value,
+      getOverlayLanguage(effectivePayload),
       errorBox,
       errorSection
     );
@@ -335,7 +358,11 @@ export function renderOverlay(payload: OverlayPayload): void {
     void addRectangleSelection(errorBox, errorSection, effectivePayload);
   });
   deleteArticleCacheButton?.addEventListener('click', () => {
-    void deleteActiveArticleCache(errorBox, errorSection);
+    void deleteActiveArticleCache(
+      getOverlayLanguage(effectivePayload),
+      errorBox,
+      errorSection
+    );
   });
   workspaceTabButton.addEventListener('click', () => {
     setActiveOverlayTab('workspace');
@@ -354,6 +381,7 @@ export function renderOverlay(payload: OverlayPayload): void {
         effectivePayload,
         sessionItems,
         selectionText,
+        getOverlayLanguage(effectivePayload),
         errorBox,
         errorSection
       );
@@ -367,7 +395,12 @@ export function renderOverlay(payload: OverlayPayload): void {
         return;
       }
 
-      void removeSelectionItem(itemId, errorBox, errorSection);
+      void removeSelectionItem(
+        itemId,
+        getOverlayLanguage(effectivePayload),
+        errorBox,
+        errorSection
+      );
     });
   }
   for (const imageToggle of root.querySelectorAll<HTMLInputElement>(
@@ -382,6 +415,7 @@ export function renderOverlay(payload: OverlayPayload): void {
       void toggleSelectionItemImage(
         itemId,
         imageToggle.checked,
+        getOverlayLanguage(effectivePayload),
         errorBox,
         errorSection
       );
@@ -404,6 +438,7 @@ function renderPanelMarkup(
   sessionItems: SelectionSessionItem[],
   maxSessionItems: number
 ): string {
+  const language = getOverlayLanguage(payload);
   const workspaceSelected = activeOverlayTab === 'workspace';
   const geminiSelected = activeOverlayTab === 'gemini';
   const geminiTabEnabled = isGeminiTabEnabled(payload, activeOverlayTab);
@@ -413,18 +448,18 @@ function renderPanelMarkup(
     <div class="panel">
       <div class="header">
         <div>
-          <div class="title">Gem Read Overlay</div>
-          <div class="subtitle">Selection actions stay on-page while the background keeps the API flow.</div>
+          <div class="title">${t(language, 'overlayTitle')}</div>
+          <div class="subtitle">${t(language, 'overlaySubtitle')}</div>
           <div class="badge">${getStatusLabel(payload.status, payload.usedMock)}</div>
         </div>
         <div class="header-actions">
-          <button class="minimize" type="button" aria-label="Minimize overlay">_</button>
-          <button class="close" type="button" aria-label="Close overlay">X</button>
+          <button class="minimize" type="button" aria-label="${escapeHtml(t(language, 'overlayMinimizeAria'))}">_</button>
+          <button class="close" type="button" aria-label="${escapeHtml(t(language, 'overlayCloseAria'))}">X</button>
         </div>
       </div>
-      <div class="panel-tabs" role="tablist" aria-label="Overlay sections">
-        ${renderOverlayTabButton('workspace', 'Workspace', workspaceSelected, true)}
-        ${renderOverlayTabButton('gemini', 'Gemini', geminiSelected, geminiTabEnabled)}
+      <div class="panel-tabs" role="tablist" aria-label="${escapeHtml(t(language, 'overlayTablistLabel'))}">
+        ${renderOverlayTabButton('workspace', t(language, 'overlayTabWorkspace'), workspaceSelected, true)}
+        ${renderOverlayTabButton('gemini', t(language, 'overlayTabGemini'), geminiSelected, geminiTabEnabled)}
       </div>
       <div
         class="panel-tabpanel panel-tabpanel--workspace"
@@ -434,46 +469,49 @@ function renderPanelMarkup(
         ${workspaceSelected ? '' : 'hidden'}
       >
         <div class="section banner-section" hidden>
-          <div class="label">Runtime</div>
+          <div class="label">${t(language, 'overlaySectionRuntime')}</div>
           <div class="banner-box"></div>
         </div>
         ${renderArticleContextMarkup(payload)}
         ${renderTokenInsightsMarkup(payload)}
         <div class="section">
-          <div class="label">Batch</div>
+          <div class="label">${t(language, 'overlaySectionBatch')}</div>
           <div class="action-grid">
-            <div class="batch-counter">${sessionItems.length}/${maxSessionItems} items</div>
+            <div class="batch-counter">${t(language, 'overlayBatchCounter', {
+              count: sessionItems.length,
+              max: maxSessionItems,
+            })}</div>
             <div class="action-row batch-actions">
-              <button class="action-button action-button--secondary action-add-selection" type="button">Add Current Selection</button>
-              <button class="action-button action-button--secondary action-add-rectangle" type="button">Add Rectangle</button>
+              <button class="action-button action-button--secondary action-add-selection" type="button">${t(language, 'overlayActionAddSelection')}</button>
+              <button class="action-button action-button--secondary action-add-rectangle" type="button">${t(language, 'overlayActionAddRectangle')}</button>
             </div>
             <div class="batch-hint"></div>
             <div class="batch-list">${renderSessionItemsMarkup(sessionItems)}</div>
           </div>
         </div>
         <div class="section">
-          <div class="label">Actions</div>
+          <div class="label">${t(language, 'overlaySectionActions')}</div>
           <div class="action-grid">
-            <input class="input model-input" type="text" list="gem-read-model-list" placeholder="Optional model override" />
+            <input class="input model-input" type="text" list="gem-read-model-list" placeholder="${escapeHtml(t(language, 'overlayModelPlaceholder'))}" />
             <datalist class="model-list" id="gem-read-model-list"></datalist>
             <div class="action-row">
-              <button class="action-button action-button--primary action-translation" type="button">Translate</button>
-              <button class="action-button action-button--secondary action-explanation" type="button">Translate + Explain</button>
+              <button class="action-button action-button--primary action-translation" type="button">${t(language, 'overlayActionTranslate')}</button>
+              <button class="action-button action-button--secondary action-explanation" type="button">${t(language, 'overlayActionTranslateExplain')}</button>
             </div>
-            <textarea class="textarea custom-prompt-input" placeholder="Custom prompt for the current selection"></textarea>
+            <textarea class="textarea custom-prompt-input" placeholder="${escapeHtml(t(language, 'overlayCustomPromptPlaceholder'))}"></textarea>
             <div class="action-row action-row--single">
-              <button class="action-button action-button--accent action-custom" type="button">Run Custom Prompt</button>
+              <button class="action-button action-button--accent action-custom" type="button">${t(language, 'overlayActionRunCustom')}</button>
             </div>
             <div class="action-hint"></div>
           </div>
         </div>
         <div class="section">
-          <div class="label">Selection</div>
+          <div class="label">${t(language, 'overlaySectionSelection')}</div>
           <div class="box selection-box"></div>
         </div>
         <div class="section preview-section" hidden>
-          <div class="label">Crop Preview</div>
-          <img class="image preview-image" alt="Selection crop preview" />
+          <div class="label">${t(language, 'overlaySectionCropPreview')}</div>
+          <img class="image preview-image" alt="${escapeHtml(t(language, 'overlayAltCropPreview'))}" />
         </div>
       </div>
       <div
@@ -486,17 +524,17 @@ function renderPanelMarkup(
         <div class="gemini-empty-state"></div>
         ${renderMarkdownExportAction(payload)}
         <div class="section result-section" hidden>
-          <div class="label result-label">Translation</div>
+          <div class="label result-label">${t(language, 'overlayResultTranslation')}</div>
           <div class="box rich-text-box result-box"></div>
         </div>
         <div class="section explanation-section" hidden>
-          <div class="label">Explanation</div>
+          <div class="label">${t(language, 'overlaySectionExplanation')}</div>
           <div class="box rich-text-box explanation-box"></div>
         </div>
         <div class="section raw-section" hidden>
-          <div class="label">Details</div>
+          <div class="label">${t(language, 'overlaySectionDetails')}</div>
           <details class="details raw-details">
-            <summary>Raw Response</summary>
+            <summary>${t(language, 'overlayRawResponseSummary')}</summary>
             <div class="details-body">
               <div class="box raw-box"></div>
             </div>
@@ -504,7 +542,7 @@ function renderPanelMarkup(
         </div>
       </div>
       <div class="section error-section" hidden>
-        <div class="label">Error</div>
+        <div class="label">${t(language, 'overlaySectionError')}</div>
         <div class="box error error-box"></div>
       </div>
       <div class="meta meta-box"></div>
@@ -513,12 +551,13 @@ function renderPanelMarkup(
 }
 
 function renderLauncherMarkup(payload: OverlayPayload): string {
+  const language = getOverlayLanguage(payload);
   return `
     <style>${LAUNCHER_STYLE_BLOCK}</style>
     <div class="launcher">
       <button class="launcher-button" type="button">Gem Read</button>
       <span class="launcher-badge">${getStatusLabel(payload.status, payload.usedMock)}</span>
-      <button class="launcher-close" type="button" aria-label="Close overlay">X</button>
+      <button class="launcher-close" type="button" aria-label="${escapeHtml(t(language, 'overlayCloseAria'))}">X</button>
     </div>
   `;
 }
@@ -602,12 +641,12 @@ function configureOverlayTabButton(
 
 function buildGeminiEmptyStateText(payload: OverlayPayload): string {
   if (payload.status === 'loading') {
-    return 'Gemini response is on the way. This tab will fill in when the current run finishes.';
+    return overlayText('overlayGeminiLoading', undefined, payload);
   }
   if (payload.status === 'error') {
-    return 'No Gemini response is available for the latest run.';
+    return overlayText('overlayGeminiError', undefined, payload);
   }
-  return 'Run Translate or Translate + Explain to show Gemini output here.';
+  return overlayText('overlayGeminiIdle', undefined, payload);
 }
 
 function renderMarkdownExportAction(payload: OverlayPayload): string {
@@ -615,11 +654,13 @@ function renderMarkdownExportAction(payload: OverlayPayload): string {
     return '';
   }
 
+  const language = getOverlayLanguage(payload);
+
   return `
     <div class="section export-section">
-      <div class="label">Export</div>
+      <div class="label">${t(language, 'overlaySectionExport')}</div>
       <div class="action-row action-row--single">
-        <button class="action-button action-button--secondary action-export-markdown" type="button">Download Markdown</button>
+        <button class="action-button action-button--secondary action-export-markdown" type="button">${t(language, 'overlayActionDownloadMarkdown')}</button>
       </div>
     </div>
   `;
@@ -656,7 +697,7 @@ function focusOverlayTabButton(tabId: OverlayTabId): void {
 function buildMetaText(payload: OverlayPayload): string {
   const items: string[] = [];
   if (payload.status === 'loading') {
-    items.push('Background workflow is running.');
+    items.push(overlayText('overlayMetaLoading', undefined, payload));
   }
   if (payload.imageCount !== undefined) {
     items.push(`images=${payload.imageCount}`);
@@ -680,7 +721,9 @@ function buildMetaText(payload: OverlayPayload): string {
     items.push(`requestTokens=${payload.payloadTokenEstimate}`);
   }
   if (payload.articleContext) {
-    items.push(`article=${payload.articleContext.textLength} chars`);
+    items.push(
+      `article=${payload.articleContext.textLength} ${overlayText('overlayArticleCharsSuffix', undefined, payload)}`
+    );
   }
   if (payload.articleCacheState?.status) {
     items.push(`cache=${payload.articleCacheState.status}`);
@@ -702,22 +745,21 @@ function getStatusLabel(
   usedMock?: boolean
 ): string {
   if (status === 'loading') {
-    return 'Running';
+    return overlayText('overlayStatusRunning');
   }
   if (status === 'error') {
-    return 'Error';
+    return overlayText('overlayStatusError');
   }
-  return usedMock ? 'Mock Result' : 'Live Result';
+  return usedMock
+    ? overlayText('overlayStatusMockResult')
+    : overlayText('overlayStatusLiveResult');
 }
 
 function getResultLabel(action: OverlayPayload['action']): string {
   if (action === 'custom_prompt') {
-    return 'Custom Prompt Result';
+    return overlayText('overlayResultCustomPrompt');
   }
-  if (action === 'translation_with_explanation') {
-    return 'Translation';
-  }
-  return 'Translation';
+  return overlayText('overlayResultTranslation');
 }
 
 function shouldShowBanner(payload: OverlayPayload): boolean {
@@ -737,7 +779,7 @@ function buildBannerText(payload: OverlayPayload): string {
   ) {
     return (
       payload.articleCacheState.notice ??
-      'The server-side article cache was missing, so this request completed without cache.'
+      overlayText('overlayBannerRemoteMissing', undefined, payload)
     );
   }
   if (payload.articleCacheState?.notice) {
@@ -747,13 +789,17 @@ function buildBannerText(payload: OverlayPayload): string {
     return payload.articleContextError;
   }
   if (!payload.sessionReady) {
-    return 'No cached selection session is ready yet. Select text on the page and run Gem Read once before using overlay actions.';
+    return overlayText('overlayBannerNoSession', undefined, payload);
   }
   if (payload.usedMock) {
-    return 'Mock mode is active. The Local API is reachable, but Gemini credentials are not configured.';
+    return overlayText('overlayBannerMockMode', undefined, payload);
   }
   if (payload.degradedReason) {
-    return `Runtime is degraded: ${payload.degradedReason}.`;
+    return overlayText(
+      'overlayBannerDegraded',
+      { reason: payload.degradedReason },
+      payload
+    );
   }
   return '';
 }
@@ -768,45 +814,48 @@ function renderArticleContextMarkup(payload: OverlayPayload): string {
   }
 
   const articleTitle =
-    payload.articleContext?.title ?? 'Article context unavailable';
+    payload.articleContext?.title ??
+    overlayText('overlayArticleUnavailableTitle', undefined, payload);
   const articleSubtitle = payload.articleContext
     ? [
         payload.articleContext.source,
         payload.articleContext.siteName,
         payload.articleContext.byline,
-        `${formatCount(payload.articleContext.textLength)} chars`,
+        `${formatCount(payload.articleContext.textLength, payload)} ${overlayText('overlayArticleCharsSuffix', undefined, payload)}`,
       ]
         .filter((value) => Boolean(value))
         .join(' | ')
     : (payload.articleContextError ??
-      'Article extraction is not available for this page.');
+      overlayText('overlayArticleUnavailableSubtitle', undefined, payload));
   const summary = payload.articleContext?.excerpt
     ? payload.articleContext.excerpt
     : payload.articleContext
-      ? `Hash ${payload.articleContext.bodyHash}`
-      : (payload.articleContextError ?? 'No extracted article context yet.');
+      ? `${overlayText('overlayArticleHashPrefix', undefined, payload)} ${payload.articleContext.bodyHash}`
+      : (payload.articleContextError ??
+        overlayText('overlayArticleNoSummary', undefined, payload));
   const cacheState = payload.articleCacheState;
   const cacheStatus = cacheState
     ? formatArticleCacheStatus(cacheState)
-    : 'No article cache state yet.';
+    : overlayText('overlayArticleCacheNone', undefined, payload);
+  const language = getOverlayLanguage(payload);
 
   return `
     <div class="section">
-      <div class="label">Article Context</div>
+      <div class="label">${t(language, 'overlaySectionArticleContext')}</div>
       <div class="article-card">
         <div class="article-header">
           <div>
             <div class="article-title">${escapeHtml(articleTitle)}</div>
             <div class="article-subtitle">${escapeHtml(articleSubtitle)}</div>
           </div>
-          ${cacheState?.cacheName ? '<button class="action-button action-button--secondary action-delete-article-cache" type="button">Delete Cache</button>' : ''}
+          ${cacheState?.cacheName ? `<button class="action-button action-button--secondary action-delete-article-cache" type="button">${t(language, 'overlayActionDeleteCache')}</button>` : ''}
         </div>
         <div class="article-summary">${escapeHtml(summary)}</div>
         <div class="article-meta-row">
           <span class="article-pill">${escapeHtml(cacheStatus)}</span>
-          ${cacheState?.tokenEstimate !== undefined ? `<span class="article-pill">Article ${escapeHtml(formatCount(cacheState.tokenEstimate))} tokens</span>` : ''}
-          ${payload.payloadTokenEstimate !== undefined ? `<span class="article-pill">Request ${escapeHtml(formatCount(payload.payloadTokenEstimate))} tokens</span>` : ''}
-          ${cacheState?.ttlSeconds !== undefined ? `<span class="article-pill">TTL ${escapeHtml(String(cacheState.ttlSeconds))}s</span>` : ''}
+          ${cacheState?.tokenEstimate !== undefined ? `<span class="article-pill">${t(language, 'overlayArticleTokensPill', { count: formatCount(cacheState.tokenEstimate, payload) })}</span>` : ''}
+          ${payload.payloadTokenEstimate !== undefined ? `<span class="article-pill">${t(language, 'overlayRequestTokensPill', { count: formatCount(payload.payloadTokenEstimate, payload) })}</span>` : ''}
+          ${cacheState?.ttlSeconds !== undefined ? `<span class="article-pill">${t(language, 'overlayTtlPill', { count: cacheState.ttlSeconds })}</span>` : ''}
         </div>
       </div>
     </div>
@@ -822,14 +871,27 @@ function renderTokenInsightsMarkup(payload: OverlayPayload): string {
   if (payload.payloadTokenEstimate !== undefined || payload.payloadTokenError) {
     cards.push(
       renderTokenCard(
-        'Current Request',
+        overlayText('overlayTokenCurrentRequest', undefined, payload),
         payload.payloadTokenEstimate !== undefined
-          ? `${formatCount(payload.payloadTokenEstimate)} estimated`
-          : 'Unavailable',
+          ? overlayText(
+              'overlayTokenEstimatedValue',
+              { count: formatCount(payload.payloadTokenEstimate, payload) },
+              payload
+            )
+          : overlayText('overlayTokenUnavailable', undefined, payload),
         payload.payloadTokenEstimate !== undefined
-          ? `Counted against ${payload.payloadTokenModelName ?? payload.modelName ?? 'the selected model'}.`
+          ? overlayText(
+              'overlayTokenCountedAgainst',
+              {
+                model:
+                  payload.payloadTokenModelName ??
+                  payload.modelName ??
+                  overlayText('overlayTokenSelectedModel', undefined, payload),
+              },
+              payload
+            )
           : (payload.payloadTokenError ??
-              'Token counting is not available for the current request.'),
+              overlayText('overlayTokenRequestUnavailableNote', undefined, payload)),
         payload.payloadTokenEstimate === undefined
       )
     );
@@ -838,13 +900,17 @@ function renderTokenInsightsMarkup(payload: OverlayPayload): string {
   if (articleTokenCount !== undefined || payload.articleContext) {
     cards.push(
       renderTokenCard(
-        'Article Baseline',
+        overlayText('overlayTokenArticleBaseline', undefined, payload),
         articleTokenCount !== undefined
-          ? `${formatCount(articleTokenCount)} article tokens`
-          : 'Long article candidate',
+          ? overlayText(
+              'overlayTokenArticleValue',
+              { count: formatCount(articleTokenCount, payload) },
+              payload
+            )
+          : overlayText('overlayTokenLongArticleCandidate', undefined, payload),
         articleTokenCount !== undefined
-          ? 'Used to decide whether automatic cache creation is worth it for this tab.'
-          : 'Article extraction succeeded, but token counting is not available yet.',
+          ? overlayText('overlayTokenArticleNote', undefined, payload)
+          : overlayText('overlayTokenArticleUnavailableNote', undefined, payload),
         articleTokenCount === undefined
       )
     );
@@ -853,7 +919,7 @@ function renderTokenInsightsMarkup(payload: OverlayPayload): string {
   if (payload.articleCacheState) {
     cards.push(
       renderTokenCard(
-        'Cache Impact',
+        overlayText('overlayTokenCacheImpact', undefined, payload),
         buildCacheImpactValue(payload),
         buildCacheImpactNote(payload),
         payload.articleCacheState.status === 'degraded'
@@ -864,10 +930,14 @@ function renderTokenInsightsMarkup(payload: OverlayPayload): string {
   if (payload.usage) {
     cards.push(
       renderTokenCard(
-        'Last Response',
+        overlayText('overlayTokenLastResponse', undefined, payload),
         payload.usage.totalTokenCount !== undefined
-          ? `${formatCount(payload.usage.totalTokenCount)} total`
-          : 'Usage recorded',
+          ? overlayText(
+              'overlayTokenTotalValue',
+              { count: formatCount(payload.usage.totalTokenCount, payload) },
+              payload
+            )
+          : overlayText('overlayTokenUsageRecorded', undefined, payload),
         buildUsageNote(payload),
         false
       )
@@ -880,7 +950,7 @@ function renderTokenInsightsMarkup(payload: OverlayPayload): string {
 
   return `
     <div class="section">
-      <div class="label">Tokens</div>
+      <div class="label">${overlayText('overlaySectionTokens', undefined, payload)}</div>
       <div class="token-grid">${cards.join('')}</div>
     </div>
   `;
@@ -890,31 +960,35 @@ function formatArticleCacheStatus(
   cacheState: NonNullable<OverlayPayload['articleCacheState']>
 ): string {
   if (cacheState.status === 'active') {
-    return `Cache active${cacheState.modelName ? ` on ${cacheState.modelName}` : ''}`;
+    return overlayText('overlayCacheStatusActive', {
+      suffix: cacheState.modelName ? ` ${cacheState.modelName}` : '',
+    });
   }
   if (cacheState.status === 'candidate') {
     return cacheState.autoCreateEligible
-      ? 'Cache eligible for auto-create'
-      : 'Cache below auto-create threshold';
+      ? overlayText('overlayCacheStatusCandidateEligible')
+      : overlayText('overlayCacheStatusCandidateBelowThreshold');
   }
   if (cacheState.status === 'creating') {
-    return 'Creating article cache';
+    return overlayText('overlayCacheStatusCreating');
   }
   if (cacheState.status === 'invalidated') {
     if (cacheState.invalidationReason === 'remote-missing') {
-      return 'Cache missing on server; local state reset';
+      return overlayText('overlayCacheStatusRemoteMissing');
     }
     return cacheState.invalidationReason
-      ? `Cache invalidated: ${cacheState.invalidationReason}`
-      : 'Cache invalidated';
+      ? overlayText('overlayCacheStatusInvalidatedReason', {
+          reason: cacheState.invalidationReason,
+        })
+      : overlayText('overlayCacheStatusInvalidated');
   }
   if (cacheState.status === 'unsupported') {
-    return 'Cache unsupported for this model';
+    return overlayText('overlayCacheStatusUnsupported');
   }
   if (cacheState.status === 'degraded') {
-    return 'Cache state degraded';
+    return overlayText('overlayCacheStatusDegraded');
   }
-  return 'Cache idle';
+  return overlayText('overlayCacheStatusIdle');
 }
 
 function renderTokenCard(
@@ -935,56 +1009,68 @@ function renderTokenCard(
 function buildCacheImpactValue(payload: OverlayPayload): string {
   const cacheState = payload.articleCacheState;
   if (!cacheState) {
-    return 'No cache state';
+    return overlayText('overlayCacheImpactNone', undefined, payload);
   }
 
   if (cacheState.status === 'active') {
     return cacheState.tokenCount !== undefined
-      ? `${formatCount(cacheState.tokenCount)} cached once`
-      : 'Cache active';
+      ? overlayText(
+          'overlayCacheImpactCachedOnce',
+          { count: formatCount(cacheState.tokenCount, payload) },
+          payload
+        )
+      : overlayText('overlayCacheImpactActive', undefined, payload);
   }
 
   if (cacheState.status === 'candidate' && cacheState.autoCreateEligible) {
-    return 'Auto-create candidate';
+    return overlayText('overlayCacheImpactCandidate', undefined, payload);
   }
 
   if (cacheState.status === 'creating') {
-    return 'Creating cache';
+    return overlayText('overlayCacheImpactCreating', undefined, payload);
   }
 
   if (cacheState.status === 'unsupported') {
-    return 'Model unsupported';
+    return overlayText('overlayCacheImpactUnsupported', undefined, payload);
   }
 
   if (cacheState.status === 'degraded') {
-    return 'Degraded';
+    return overlayText('overlayCacheImpactDegraded', undefined, payload);
   }
 
   if (cacheState.status === 'invalidated') {
     if (cacheState.invalidationReason === 'remote-missing') {
-      return 'Fallback without cache';
+      return overlayText('overlayCacheImpactFallback', undefined, payload);
     }
-    return 'Invalidated';
+    return overlayText('overlayCacheImpactInvalidated', undefined, payload);
   }
 
-  return 'Idle';
+  return overlayText('overlayCacheImpactIdle', undefined, payload);
 }
 
 function buildCacheImpactNote(payload: OverlayPayload): string {
   const cacheState = payload.articleCacheState;
   if (!cacheState) {
-    return 'No article cache state has been resolved for this tab yet.';
+    return overlayText('overlayArticleCacheNoneNote', undefined, payload);
   }
 
   if (cacheState.status === 'active') {
     const cachedTokens = payload.usage?.cachedContentTokenCount;
     if (cachedTokens !== undefined && cachedTokens > 0) {
-      return `The last response reused ${formatCount(cachedTokens)} cached tokens from the article context.`;
+      return overlayText(
+        'overlayTokenCacheReuse',
+        { count: formatCount(cachedTokens, payload) },
+        payload
+      );
     }
     if (payload.payloadTokenEstimate !== undefined) {
-      return `Selection reruns stay near ${formatCount(payload.payloadTokenEstimate)} request tokens while Gemini reuses the cached article context.`;
+      return overlayText(
+        'overlayTokenCacheReuseEstimate',
+        { count: formatCount(payload.payloadTokenEstimate, payload) },
+        payload
+      );
     }
-    return 'Article context is already cached for this tab and model.';
+    return overlayText('overlayTokenCacheActive', undefined, payload);
   }
 
   if (cacheState.status === 'candidate' && cacheState.autoCreateEligible) {
@@ -993,11 +1079,18 @@ function buildCacheImpactNote(payload: OverlayPayload): string {
       articleTokens !== undefined &&
       payload.payloadTokenEstimate !== undefined
     ) {
-      return `Creating cache stores about ${formatCount(articleTokens)} article tokens once, then reruns stay near ${formatCount(payload.payloadTokenEstimate)} selection tokens.`;
+      return overlayText(
+        'overlayTokenCacheCreateCompare',
+        {
+          articleTokens: formatCount(articleTokens, payload),
+          requestTokens: formatCount(payload.payloadTokenEstimate, payload),
+        },
+        payload
+      );
     }
     return (
       cacheState.notice ??
-      'This article is large enough to justify automatic cache creation.'
+      overlayText('overlayTokenCacheCreateDefault', undefined, payload)
     );
   }
 
@@ -1007,20 +1100,20 @@ function buildCacheImpactNote(payload: OverlayPayload): string {
   ) {
     return (
       cacheState.notice ??
-      'Gem Read retried without article cache after Gemini could not find the server-side cache for this tab.'
+      overlayText('overlayTokenCacheRetryWithout', undefined, payload)
     );
   }
 
   return (
     cacheState.notice ??
-    'Cache state is available, but no token comparison is ready yet.'
+    overlayText('overlayTokenCachePending', undefined, payload)
   );
 }
 
 function buildUsageNote(payload: OverlayPayload): string {
   const usage = payload.usage;
   if (!usage) {
-    return 'No response usage metadata is available.';
+    return overlayText('overlayUsageUnavailable', undefined, payload);
   }
 
   const parts: string[] = [];
@@ -1036,11 +1129,13 @@ function buildUsageNote(payload: OverlayPayload): string {
 
   return parts.length > 0
     ? parts.join(' | ')
-    : 'The response completed, but Gemini did not return per-stage token counts.';
+    : overlayText('overlayUsageMissingStageCounts', undefined, payload);
 }
 
-function formatCount(value: number): string {
-  return value.toLocaleString('en-US');
+function formatCount(value: number, payload?: OverlayPayload): string {
+  return value.toLocaleString(
+    getOverlayLanguage(payload) === 'ja' ? 'ja-JP' : 'en-US'
+  );
 }
 
 function buildSelectionText(sessionItems: SelectionSessionItem[]): string {
@@ -1049,7 +1144,7 @@ function buildSelectionText(sessionItems: SelectionSessionItem[]): string {
     return '';
   }
 
-  return latestItem.selection.text || '[Image region only]';
+  return latestItem.selection.text || overlayText('overlaySessionImageOnly');
 }
 
 function buildBatchHint(
@@ -1058,39 +1153,42 @@ function buildBatchHint(
 ): string {
   const { current } = getSelectionBatchCapacity();
   if (rectangleActive) {
-    return 'Rectangle selection is active. Drag on the page to capture a region or press Esc to cancel.';
+    return overlayText('overlayRectangleActive');
   }
   if (current >= maxSessionItems) {
-    return `The batch is full. Remove an item before adding another one.`;
+    return overlayText('overlayBatchHintFull', { count: maxSessionItems });
   }
   if (current === 0) {
-    return 'Add the current text selection with Ctrl+Shift+9 or capture an image region with Ctrl+Shift+Y to start a reusable batch.';
+    return overlayText('overlayBatchHintStart');
   }
-  return 'Batch items keep their own cached crop preview so later analysis does not depend on live page selection.';
+  return overlayText('overlayBatchHintReuse');
 }
 
 function renderSessionItemsMarkup(
   sessionItems: SelectionSessionItem[]
 ): string {
   if (sessionItems.length === 0) {
-    return '<div class="session-item"><div class="session-item-text">No items in the current batch.</div></div>';
+    return `<div class="session-item"><div class="session-item-text">${escapeHtml(overlayText('overlaySessionEmpty'))}</div></div>`;
   }
 
   return sessionItems
     .map((item, index) => {
-      const itemText = item.selection.text || '[Image region only]';
+      const itemText =
+        item.selection.text || overlayText('overlaySessionImageOnly');
       const itemKind =
-        item.source === 'free-rectangle' ? 'Rectangle' : 'Selection';
+        item.source === 'free-rectangle'
+          ? overlayText('overlaySessionKindRectangle')
+          : overlayText('overlaySessionKindSelection');
       const toggleDisabled = !item.previewImageUrl;
       return `
         <div class="session-item">
           <div class="session-item-header">
             <div class="session-item-kind">${index + 1}. ${itemKind}</div>
-            <button class="session-item-remove" type="button" data-item-id="${escapeHtml(item.id)}">Remove</button>
+            <button class="session-item-remove" type="button" data-item-id="${escapeHtml(item.id)}">${overlayText('overlaySessionRemove')}</button>
           </div>
           <div class="session-item-text">${escapeHtml(itemText)}</div>
           <div class="session-item-meta">
-            <span>${item.previewImageUrl ? 'Cached crop ready' : 'No cached crop'}</span>
+            <span>${item.previewImageUrl ? overlayText('overlaySessionCachedCropReady') : overlayText('overlaySessionNoCachedCrop')}</span>
             <label class="session-item-toggle">
               <input
                 class="session-item-image-toggle"
@@ -1099,7 +1197,7 @@ function renderSessionItemsMarkup(
                 ${item.includeImage ? 'checked' : ''}
                 ${toggleDisabled ? 'disabled' : ''}
               />
-              Include image
+              ${overlayText('overlaySessionIncludeImage')}
             </label>
           </div>
         </div>
@@ -1114,7 +1212,11 @@ async function addRectangleSelection(
   payload: OverlayPayload
 ): Promise<void> {
   if (!canAppendSelectionBatchItem()) {
-    errorBox.textContent = `You can keep up to ${payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS} selections in one batch.`;
+    errorBox.textContent = overlayText(
+      'overlayErrorBatchLimit',
+      { count: payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS },
+      payload
+    );
     errorSection.hidden = false;
     return;
   }
@@ -1131,7 +1233,7 @@ async function addRectangleSelection(
   if (!selection.ok || !selection.payload) {
     if (
       selection.error &&
-      selection.error !== 'Rectangle selection was cancelled.'
+      selection.error !== overlayText('overlayRectangleCancelled', undefined, payload)
     ) {
       errorBox.textContent = selection.error;
       errorSection.hidden = false;
@@ -1156,7 +1258,7 @@ async function addRectangleSelection(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ?? 'Failed to add the rectangle selection.';
+      response.error ?? overlayText('overlayErrorAddRectangle', undefined, payload);
     errorSection.hidden = false;
     renderOverlay({
       ...payload,
@@ -1303,6 +1405,7 @@ function handleOverlayKeyDown(event: KeyboardEvent): void {
       'custom_prompt',
       modelInput?.value ?? '',
       customPromptInput.value,
+      getOverlayLanguage(currentOverlayPayload),
       errorBox,
       errorSection
     );
@@ -1335,6 +1438,7 @@ function handleOverlayKeyDown(event: KeyboardEvent): void {
       currentOverlayPayload.action ?? 'translation',
       currentOverlayPayload.modelName ?? '',
       currentOverlayPayload.customPrompt ?? '',
+      getOverlayLanguage(currentOverlayPayload),
       errorBox,
       errorSection
     );

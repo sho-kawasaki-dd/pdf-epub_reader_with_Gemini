@@ -58,6 +58,7 @@ describe('runSelectionAnalysis', () => {
       defaultModel: 'gemini-2.5-flash',
       sharedSystemPrompt: 'Shared translation rules.',
       lastKnownModels: ['gemini-2.5-flash'],
+      uiLanguage: 'en',
       articleCache: {
         enableAutoCreate: true,
       },
@@ -168,7 +169,8 @@ describe('runSelectionAnalysis', () => {
     });
     expect(cropSelectionImageMock).toHaveBeenCalledWith(
       'data:image/png;base64,shot',
-      expect.objectContaining({ text: 'fallback text' })
+      expect.objectContaining({ text: 'fallback text' }),
+      'en'
     );
     expect(sendAnalyzeTranslateRequestMock).toHaveBeenCalledWith(
       [
@@ -454,6 +456,7 @@ describe('runSelectionAnalysis', () => {
       defaultModel: 'gemini-2.5-flash',
       sharedSystemPrompt: '   ',
       lastKnownModels: ['gemini-2.5-flash'],
+      uiLanguage: 'en',
       articleCache: {
         enableAutoCreate: false,
       },
@@ -692,7 +695,7 @@ describe('runSelectionAnalysis', () => {
         status: 'error',
         action: 'translation_with_explanation',
         error:
-          '解析セッションが見つかりません。新しい選択を追加してから再実行してください。',
+          'Analysis session could not be found. Add a new selection and try again.',
       })
     );
   });

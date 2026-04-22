@@ -30,6 +30,9 @@ export function createChromeMock(): typeof chrome {
       onStartup: createEventHook(),
       sendMessage: vi.fn(),
     },
+    i18n: {
+      getUILanguage: vi.fn(() => 'en-US'),
+    },
     commands: {
       onCommand: createEventHook(),
     },
@@ -42,6 +45,7 @@ export function createChromeMock(): typeof chrome {
       download: vi.fn(),
     },
     storage: {
+      onChanged: createEventHook(),
       local: {
         get: vi.fn(
           (

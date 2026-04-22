@@ -4,6 +4,7 @@ import {
   type ArticleCacheSettings,
   type MarkdownExportSettings,
   type ExtensionSettings,
+  type UiLanguage,
 } from '../../shared/config/phase0';
 import type {
   CacheListItem,
@@ -17,6 +18,8 @@ import {
   listBrowserExtensionCaches,
   deleteContextCache,
 } from '../../shared/gateways/localApiGateway';
+import { t } from '../../shared/i18n/translator';
+import type { MessageKey } from '../../shared/i18n/messages';
 import {
   loadExtensionSettings,
   patchExtensionSettings,
@@ -41,6 +44,7 @@ interface PopupRefs {
   form: HTMLFormElement;
   apiInput: HTMLInputElement;
   defaultModelInput: HTMLInputElement;
+  uiLanguageSelect: HTMLSelectElement;
   sharedSystemPromptInput: HTMLTextAreaElement;
   articleCacheAutoCreateInput: HTMLInputElement;
   includeExplanationInput: HTMLInputElement;
@@ -63,15 +67,27 @@ interface PopupRefs {
   debugLoadButton: HTMLButtonElement;
 }
 
+interface PopupFlashMessage {
+  key: MessageKey;
+  isError: boolean;
+  params?: Record<string, string | number>;
+}
+
 /**
  * Popup は Local API の接続確認と永続 settings の編集に責務を絞る。
  * 実行系 UI を overlay 側に寄せることで、popup は設定と診断の導線として保守しやすく保つ。
  */
-export async function renderPopup(documentRef: Document): Promise<void> {
+export async function renderPopup(
+  documentRef: Document,
+  flashMessage?: PopupFlashMessage
+): Promise<void> {
   const appRoot = documentRef.getElementById('app');
   if (!appRoot) {
     return;
   }
+
+  const settings = await loadExtensionSettings();
+  const language = settings.uiLanguage;
 
   appRoot.innerHTML = `
     <style>
@@ -355,115 +371,122 @@ export async function renderPopup(documentRef: Document): Promise<void> {
     </style>
     <div class="popup-shell">
       <div class="panel">
-        <p class="eyebrow">Gem Read</p>
+        <p class="eyebrow">${t(language, 'popupEyebrow')}</p>
         <div class="title-row">
           <div>
-            <h1 class="title">Local Bridge</h1>
-            <p class="subtitle">Popup settings for Local API connectivity, default model, article cache behavior, and Markdown export metadata.</p>
+            <h1 class="title">${t(language, 'popupTitle')}</h1>
+            <p class="subtitle">${t(language, 'popupSubtitle')}</p>
           </div>
-          <div class="status-badge" data-role="status-badge">Checking</div>
+          <div class="status-badge" data-role="status-badge">${t(language, 'popupChecking')}</div>
         </div>
         <div class="section status-card">
-          <p class="status-line" data-role="status-line">Local API connectivity is being checked.</p>
+          <p class="status-line" data-role="status-line">${t(language, 'popupCheckingLine')}</p>
           <p class="detail-line" data-role="detail-line"></p>
           <p class="source-line" data-role="source-line"></p>
           <p class="message-line" data-role="message-line"></p>
         </div>
         <form class="section" data-role="settings-form">
-          <label class="label" for="api-base-url">Local API Base URL</label>
+          <label class="label" for="api-base-url">${t(language, 'popupApiBaseUrlLabel')}</label>
           <input class="input" id="api-base-url" name="apiBaseUrl" type="url" autocomplete="off" spellcheck="false" />
-          <p class="hint">Allowed values are localhost only, for example http://127.0.0.1:8000.</p>
+          <p class="hint">${t(language, 'popupApiBaseUrlHint')}</p>
           <div class="section">
-            <label class="label" for="default-model">Default Model</label>
+            <label class="label" for="default-model">${t(language, 'popupDefaultModelLabel')}</label>
             <input class="input" id="default-model" name="defaultModel" type="text" list="model-options" autocomplete="off" spellcheck="false" />
             <datalist id="model-options"></datalist>
-            <p class="hint">Fetched models are suggested automatically, but a manual model ID is also allowed.</p>
+            <p class="hint">${t(language, 'popupDefaultModelHint')}</p>
           </div>
           <div class="section">
-            <label class="label" for="shared-system-prompt">Shared System Prompt</label>
+            <label class="label" for="ui-language">${t(language, 'popupUiLanguageLabel')}</label>
+            <select class="input" id="ui-language" name="uiLanguage">
+              <option value="ja">${t(language, 'popupUiLanguageJa')}</option>
+              <option value="en">${t(language, 'popupUiLanguageEn')}</option>
+            </select>
+          </div>
+          <div class="section">
+            <label class="label" for="shared-system-prompt">${t(language, 'popupSharedSystemPromptLabel')}</label>
             <textarea class="textarea" id="shared-system-prompt" name="sharedSystemPrompt" data-role="shared-system-prompt" spellcheck="false"></textarea>
-            <p class="hint">Applied to translation, translation with explanation, and custom prompt requests. The saved text is kept as entered.</p>
+            <p class="hint">${t(language, 'popupSharedSystemPromptHint')}</p>
           </div>
           <details class="details-section" data-role="article-cache-section">
-            <summary class="details-summary">Article Cache
-              <span class="details-summary-note">Default: automatic full-article cache creation is on</span>
+            <summary class="details-summary">${t(language, 'popupArticleCacheSummary')}
+              <span class="details-summary-note">${t(language, 'popupArticleCacheSummaryNote')}</span>
             </summary>
             <div class="details-body">
               <div class="checkbox-group">
                 <label class="checkbox-card" for="article-cache-auto-create">
                   <input class="checkbox-input" id="article-cache-auto-create" data-role="article-cache-auto-create" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Automatically create full article cache</span>
-                    <span class="checkbox-hint">When off, Gem Read still reuses an existing article cache for the tab, but it will not create a new one automatically.</span>
+                    <span class="checkbox-title">${t(language, 'popupArticleCacheAutoCreateTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupArticleCacheAutoCreateHint')}</span>
                   </span>
                 </label>
               </div>
-              <p class="hint">This applies to article-sized pages only. It does not disable cache reuse or manual deletion.</p>
+              <p class="hint">${t(language, 'popupArticleCacheHint')}</p>
             </div>
           </details>
           <details class="details-section" data-role="markdown-export-section">
-            <summary class="details-summary">Markdown Export
-              <span class="details-summary-note">Default: explanation + selected text</span>
+            <summary class="details-summary">${t(language, 'popupMarkdownExportSummary')}
+              <span class="details-summary-note">${t(language, 'popupMarkdownExportSummaryNote')}</span>
             </summary>
             <div class="details-body">
               <div class="checkbox-group">
                 <label class="checkbox-card" for="include-explanation">
                   <input class="checkbox-input" id="include-explanation" data-role="include-explanation" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Include explanation</span>
-                    <span class="checkbox-hint">Enabled by default. Saves Gemini's explanation section when present.</span>
+                    <span class="checkbox-title">${t(language, 'popupIncludeExplanationTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupIncludeExplanationHint')}</span>
                   </span>
                 </label>
                 <label class="checkbox-card" for="include-selections">
                   <input class="checkbox-input" id="include-selections" data-role="include-selections" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Include selected source text</span>
-                    <span class="checkbox-hint">Enabled by default. Lists the current batch selections before the answer body.</span>
+                    <span class="checkbox-title">${t(language, 'popupIncludeSelectionsTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupIncludeSelectionsHint')}</span>
                   </span>
                 </label>
                 <label class="checkbox-card" for="include-raw-response">
                   <input class="checkbox-input" id="include-raw-response" data-role="include-raw-response" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Include raw response</span>
-                    <span class="checkbox-hint">Disabled by default. Adds the unprocessed Gemini response payload.</span>
+                    <span class="checkbox-title">${t(language, 'popupIncludeRawResponseTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupIncludeRawResponseHint')}</span>
                   </span>
                 </label>
                 <label class="checkbox-card" for="include-article-metadata">
                   <input class="checkbox-input" id="include-article-metadata" data-role="include-article-metadata" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Include article metadata</span>
-                    <span class="checkbox-hint">Disabled by default. Adds source page metadata such as title, byline, and site name.</span>
+                    <span class="checkbox-title">${t(language, 'popupIncludeArticleMetadataTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupIncludeArticleMetadataHint')}</span>
                   </span>
                 </label>
                 <label class="checkbox-card" for="include-usage-metrics">
                   <input class="checkbox-input" id="include-usage-metrics" data-role="include-usage-metrics" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Include usage metrics</span>
-                    <span class="checkbox-hint">Disabled by default. Adds token usage when the current result includes it.</span>
+                    <span class="checkbox-title">${t(language, 'popupIncludeUsageMetricsTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupIncludeUsageMetricsHint')}</span>
                   </span>
                 </label>
                 <label class="checkbox-card" for="include-yaml-frontmatter">
                   <input class="checkbox-input" id="include-yaml-frontmatter" data-role="include-yaml-frontmatter" type="checkbox" />
                   <span class="checkbox-copy">
-                    <span class="checkbox-title">Include YAML frontmatter</span>
-                    <span class="checkbox-hint">Disabled by default. Adds machine-readable metadata at the top of the file.</span>
+                    <span class="checkbox-title">${t(language, 'popupIncludeYamlFrontmatterTitle')}</span>
+                    <span class="checkbox-hint">${t(language, 'popupIncludeYamlFrontmatterHint')}</span>
                   </span>
                 </label>
               </div>
-              <p class="hint">Default export saves answer body, explanation, and selected text. Filename rule is page title plus timestamp.</p>
+              <p class="hint">${t(language, 'popupMarkdownExportHint')}</p>
             </div>
           </details>
           <div class="section button-row">
-            <button class="button button-secondary" type="button" data-role="refresh-button">Refresh</button>
-            <button class="button button-primary" type="submit" data-role="save-button">Save</button>
+            <button class="button button-secondary" type="button" data-role="refresh-button">${t(language, 'popupRefresh')}</button>
+            <button class="button button-primary" type="submit" data-role="save-button">${t(language, 'popupSave')}</button>
           </div>
-          <button class="button button-secondary button-wide" type="button" data-role="open-overlay-button">Open Overlay On Active Tab</button>
-          <p class="hint">Browser commands are the primary flow in Phase 3. This button uses the same active-tab overlay reopen path as the keyboard shortcut.</p>
+          <button class="button button-secondary button-wide" type="button" data-role="open-overlay-button">${t(language, 'popupOpenOverlay')}</button>
+          <p class="hint">${t(language, 'popupOpenOverlayHint')}</p>
         </form>
         <details class="debug-section" data-role="debug-section">
-          <summary class="debug-summary">Debug: Cache Management</summary>
+          <summary class="debug-summary">${t(language, 'popupDebugCacheSummary')}</summary>
           <div class="debug-body">
-            <button class="debug-load-button" type="button" data-role="debug-load-button">Load browser-extension caches</button>
+            <button class="debug-load-button" type="button" data-role="debug-load-button">${t(language, 'popupDebugLoadCaches')}</button>
             <ul class="debug-cache-list" data-role="debug-cache-list"></ul>
           </div>
         </details>
@@ -475,15 +498,13 @@ export async function renderPopup(documentRef: Document): Promise<void> {
   if (!refs) {
     return;
   }
-
-  const settings = await loadExtensionSettings();
   const state: PopupViewState = {
     settings,
     status: {
       connectionStatus: 'unreachable',
       availability: 'degraded',
       apiBaseUrl: settings.apiBaseUrl,
-      detail: 'Local API connectivity has not been checked yet.',
+      detail: t(language, 'popupDetailNotCheckedYet'),
       modelSource: 'storage_fallback',
       degradedReason: 'unknown',
     },
@@ -496,8 +517,16 @@ export async function renderPopup(documentRef: Document): Promise<void> {
 
   refs.apiInput.value = state.settings.apiBaseUrl;
   refs.defaultModelInput.value = state.settings.defaultModel;
+  refs.uiLanguageSelect.value = state.settings.uiLanguage;
   refs.sharedSystemPromptInput.value = state.settings.sharedSystemPrompt;
   syncView(refs, state);
+  if (flashMessage) {
+    setMessage(
+      refs,
+      t(state.settings.uiLanguage, flashMessage.key, flashMessage.params),
+      flashMessage.isError
+    );
+  }
 
   refs.form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -507,7 +536,7 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       // 拡張が任意ホストへ送信しないよう、UI 側でも localhost 制約を早めに明示する。
       setMessage(
         refs,
-        'Use a localhost URL such as http://127.0.0.1:8000.',
+        t(getCurrentPopupLanguage(refs, state), 'popupErrorUseLocalhost'),
         true
       );
       return;
@@ -518,20 +547,24 @@ export async function renderPopup(documentRef: Document): Promise<void> {
       state.settings = await saveExtensionSettings({
         apiBaseUrl: normalizeLocalApiBaseUrl(candidateUrl),
         defaultModel: refs.defaultModelInput.value.trim(),
+        uiLanguage: refs.uiLanguageSelect.value as UiLanguage,
         sharedSystemPrompt: refs.sharedSystemPromptInput.value,
         lastKnownModels: state.models.map((model) => model.modelId),
         articleCache: readArticleCacheSettings(refs),
         markdownExport: readMarkdownExportSettings(refs),
       });
-      refs.apiInput.value = state.settings.apiBaseUrl;
-      refs.defaultModelInput.value = state.settings.defaultModel;
-      refs.sharedSystemPromptInput.value = state.settings.sharedSystemPrompt;
-      setMessage(refs, 'Settings saved.', false);
-      await refreshPopupState(state, refs, state.settings.apiBaseUrl, true);
+      await renderPopup(documentRef, {
+        key: 'popupMessageSaved',
+        isError: false,
+      });
+      return;
     } catch (error) {
       setMessage(
         refs,
-        toErrorMessage(error, 'Failed to save popup settings.'),
+        toErrorMessage(
+          error,
+          t(getCurrentPopupLanguage(refs, state), 'popupErrorSaveSettings')
+        ),
         true
       );
     } finally {
@@ -542,7 +575,11 @@ export async function renderPopup(documentRef: Document): Promise<void> {
   refs.refreshButton.addEventListener('click', async () => {
     const candidateUrl = refs.apiInput.value.trim();
     if (!isValidLocalApiBaseUrl(candidateUrl)) {
-      setMessage(refs, 'Refresh needs a valid localhost URL.', true);
+      setMessage(
+        refs,
+        t(getCurrentPopupLanguage(refs, state), 'popupErrorRefreshNeedsLocalhost'),
+        true
+      );
       return;
     }
 
@@ -554,11 +591,18 @@ export async function renderPopup(documentRef: Document): Promise<void> {
         normalizeLocalApiBaseUrl(candidateUrl),
         false
       );
-      setMessage(refs, 'Connection status refreshed.', false);
+      setMessage(
+        refs,
+        t(getCurrentPopupLanguage(refs, state), 'popupMessageStatusRefreshed'),
+        false
+      );
     } catch (error) {
       setMessage(
         refs,
-        toErrorMessage(error, 'Failed to refresh popup status.'),
+        toErrorMessage(
+          error,
+          t(getCurrentPopupLanguage(refs, state), 'popupErrorRefreshStatus')
+        ),
         true
       );
     } finally {
@@ -570,11 +614,18 @@ export async function renderPopup(documentRef: Document): Promise<void> {
     setBusy(refs, true);
     try {
       await openOverlayShortcut(state, refs);
-      setMessage(refs, 'Overlay shortcut opened on the active tab.', false);
+      setMessage(
+        refs,
+        t(getCurrentPopupLanguage(refs, state), 'popupMessageOverlayOpened'),
+        false
+      );
     } catch (error) {
       setMessage(
         refs,
-        toErrorMessage(error, 'Failed to open overlay shortcut.'),
+        toErrorMessage(
+          error,
+          t(getCurrentPopupLanguage(refs, state), 'popupErrorOpenOverlay')
+        ),
         true
       );
     } finally {
@@ -592,7 +643,10 @@ export async function renderPopup(documentRef: Document): Promise<void> {
     } catch (error) {
       setMessage(
         refs,
-        toErrorMessage(error, 'Failed to load cache list.'),
+        toErrorMessage(
+          error,
+          t(getCurrentPopupLanguage(refs, state), 'popupErrorLoadCacheList')
+        ),
         true
       );
     } finally {
@@ -614,6 +668,8 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
   const apiInput = appRoot.querySelector<HTMLInputElement>('#api-base-url');
   const defaultModelInput =
     appRoot.querySelector<HTMLInputElement>('#default-model');
+  const uiLanguageSelect =
+    appRoot.querySelector<HTMLSelectElement>('#ui-language');
   const sharedSystemPromptInput = appRoot.querySelector<HTMLTextAreaElement>(
     '[data-role="shared-system-prompt"]'
   );
@@ -678,6 +734,7 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     !form ||
     !apiInput ||
     !defaultModelInput ||
+    !uiLanguageSelect ||
     !sharedSystemPromptInput ||
     !articleCacheAutoCreateInput ||
     !includeExplanationInput ||
@@ -706,6 +763,7 @@ function getPopupRefs(appRoot: HTMLElement): PopupRefs | null {
     form,
     apiInput,
     defaultModelInput,
+    uiLanguageSelect,
     sharedSystemPromptInput,
     articleCacheAutoCreateInput,
     includeExplanationInput,
@@ -760,7 +818,8 @@ async function refreshPopupState(
       // popup は degraded でも手入力や cached model による設定編集を止めない。
       state.status.modelSource = 'storage_fallback';
       state.status.detail =
-        state.status.detail ?? 'Using cached models from popup storage.';
+        state.status.detail ??
+        t(state.settings.uiLanguage, 'popupDetailUsingCachedModels');
     }
 
     syncView(refs, state);
@@ -770,7 +829,10 @@ async function refreshPopupState(
       availability: 'degraded',
       apiBaseUrl,
       checkedAt: new Date().toISOString(),
-      detail: toErrorMessage(error, 'Local API is unreachable.'),
+      detail: toErrorMessage(
+        error,
+        t(state.settings.uiLanguage, 'popupErrorUnreachable')
+      ),
       modelSource:
         state.settings.lastKnownModels.length > 0
           ? 'storage_fallback'
@@ -791,11 +853,16 @@ async function refreshPopupState(
  */
 function syncView(refs: PopupRefs, state: PopupViewState): void {
   refs.statusBadge.textContent = formatStatusBadge(
+    state.settings.uiLanguage,
     state.status.connectionStatus
   );
-  refs.statusLine.textContent = formatStatusLine(state.status);
+  refs.statusLine.textContent = formatStatusLine(
+    state.settings.uiLanguage,
+    state.status
+  );
   refs.detailLine.textContent = state.status.detail ?? '';
   refs.sourceLine.textContent = formatSourceLine(
+    state.settings.uiLanguage,
     state.status.modelSource,
     state.models
   );
@@ -803,6 +870,7 @@ function syncView(refs: PopupRefs, state: PopupViewState): void {
   if (!refs.defaultModelInput.value) {
     refs.defaultModelInput.value = state.settings.defaultModel;
   }
+  refs.uiLanguageSelect.value = state.settings.uiLanguage;
   if (!refs.sharedSystemPromptInput.value) {
     refs.sharedSystemPromptInput.value = state.settings.sharedSystemPrompt;
   }
@@ -870,44 +938,54 @@ async function openOverlayShortcut(
   })) as OpenOverlayResponse | undefined;
 
   if (response?.ok === false) {
-    throw new Error(response.error ?? 'Failed to open the Gem Read overlay.');
+    throw new Error(
+      response.error ?? t(_state.settings.uiLanguage, 'popupErrorOpenOverlayResponse')
+    );
   }
 }
 
 function formatStatusBadge(
+  language: UiLanguage,
   connectionStatus: PopupStatusPayload['connectionStatus']
 ): string {
   if (connectionStatus === 'reachable') {
-    return 'Reachable';
+    return t(language, 'popupStatusReachable');
   }
   if (connectionStatus === 'mock-mode') {
-    return 'Mock Mode';
+    return t(language, 'popupStatusMockMode');
   }
-  return 'Unreachable';
+  return t(language, 'popupStatusUnreachable');
 }
 
-function formatStatusLine(status: PopupStatusPayload): string {
+function formatStatusLine(
+  language: UiLanguage,
+  status: PopupStatusPayload
+): string {
   if (status.connectionStatus === 'reachable') {
-    return 'Local API is reachable and returned a live model catalog.';
+    return t(language, 'popupStatusLineReachable');
   }
   if (status.connectionStatus === 'mock-mode') {
-    return 'Local API is up, but popup is using fallback or degraded model information.';
+    return t(language, 'popupStatusLineMockMode');
   }
-  return 'Local API could not be reached from the popup.';
+  return t(language, 'popupStatusLineUnreachable');
 }
 
 function formatSourceLine(
+  language: UiLanguage,
   source: ModelCatalogSource | undefined,
   models: ModelOption[]
 ): string {
   const modelCount = models.length;
   if (!source) {
     return modelCount > 0
-      ? `Cached models available: ${modelCount}`
-      : 'No model suggestions are available yet.';
+      ? t(language, 'popupSourceCachedModels', { count: modelCount })
+      : t(language, 'popupSourceNoModels');
   }
 
-  return `Model source: ${source} | suggestions: ${modelCount}`;
+  return t(language, 'popupSourceModels', {
+    source,
+    count: modelCount,
+  });
 }
 
 function toErrorMessage(error: unknown, fallback: string): string {
@@ -931,7 +1009,9 @@ function renderDebugCacheList(
 ): void {
   if (items.length === 0) {
     refs.debugCacheList.innerHTML =
-      '<li class="debug-empty">No browser-extension caches found.</li>';
+      `<li class="debug-empty">${escapeHtml(
+        t(state.settings.uiLanguage, 'popupMessageNoCaches')
+      )}</li>`;
     return;
   }
 
@@ -962,15 +1042,31 @@ function renderDebugCacheList(
         );
         // 削除後は server-side 状態を再取得し、popup 内の list を再構築して stale 表示を残さない。
         renderDebugCacheList(outerRefs, result.items, state, outerRefs);
-        setMessage(outerRefs, `Deleted cache: ${cacheName}`, false);
+        setMessage(
+          outerRefs,
+          t(state.settings.uiLanguage, 'popupMessageDeletedCache', {
+            cacheName,
+          }),
+          false
+        );
       } catch (error) {
         btn.disabled = false;
         setMessage(
           outerRefs,
-          toErrorMessage(error, 'Failed to delete cache.'),
+          toErrorMessage(
+            error,
+            t(state.settings.uiLanguage, 'popupErrorDeleteCache')
+          ),
           true
         );
       }
     });
   }
+}
+
+function getCurrentPopupLanguage(
+  refs: PopupRefs,
+  state: PopupViewState
+): UiLanguage {
+  return refs.uiLanguageSelect.value === 'ja' ? 'ja' : 'en';
 }

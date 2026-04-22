@@ -75,6 +75,10 @@ describe('registerBackgroundRuntime', () => {
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash'],
+      uiLanguage: 'en',
+      articleCache: {
+        enableAutoCreate: true,
+      },
       markdownExport: {
         includeExplanation: true,
         includeSelections: true,
@@ -201,7 +205,7 @@ describe('registerBackgroundRuntime', () => {
 
     const handler = getCommandHandler();
     handler(PHASE2_RECTANGLE_COMMAND_ID, { id: 7, windowId: 3 });
-    await Promise.resolve();
+    await flushAsyncWork();
 
     expect(getChromeMock().tabs.sendMessage).toHaveBeenCalledWith(7, {
       type: 'phase2.beginRectangleSelection',
@@ -298,7 +302,7 @@ describe('registerBackgroundRuntime', () => {
     );
 
     expect(keepChannelOpen).toBe(true);
-    await flushAsyncWork();
+    await flushAsyncWork(16);
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
     expect(invalidateArticleCacheMock).toHaveBeenCalledWith(
       expect.objectContaining({

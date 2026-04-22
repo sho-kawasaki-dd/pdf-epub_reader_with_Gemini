@@ -20,6 +20,8 @@ export const OUTPUT_IMAGE_QUALITY = 0.82;
 export const OUTPUT_MAX_LONG_EDGE = 768;
 export const MAX_SELECTION_SESSION_ITEMS = 10;
 
+export type UiLanguage = 'ja' | 'en';
+
 export interface MarkdownExportSettings {
   includeExplanation: boolean;
   includeSelections: boolean;
@@ -42,6 +44,7 @@ export interface ExtensionSettings {
   defaultModel: string;
   sharedSystemPrompt: string;
   lastKnownModels: string[];
+  uiLanguage: UiLanguage;
   articleCache: ArticleCacheSettings;
   markdownExport: MarkdownExportSettings;
 }
@@ -55,6 +58,7 @@ export interface ExtensionSettingsInput {
   defaultModel?: string | null;
   sharedSystemPrompt?: string | null;
   lastKnownModels?: readonly string[] | null;
+  uiLanguage?: UiLanguage | null;
   articleCache?: Partial<ArticleCacheSettings> | null;
   markdownExport?: Partial<MarkdownExportSettings> | null;
 }
@@ -77,9 +81,18 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   defaultModel: '',
   sharedSystemPrompt: '',
   lastKnownModels: [],
+  uiLanguage: 'en',
   articleCache: { ...DEFAULT_ARTICLE_CACHE_SETTINGS },
   markdownExport: { ...DEFAULT_MARKDOWN_EXPORT_SETTINGS },
 };
+
+function normalizeStoredUiLanguage(
+  value: UiLanguage | null | undefined
+): UiLanguage {
+  return value === 'ja' || value === 'en'
+    ? value
+    : DEFAULT_EXTENSION_SETTINGS.uiLanguage;
+}
 
 export function isValidLocalApiBaseUrl(
   value: string | null | undefined
@@ -172,6 +185,7 @@ export function mergeExtensionSettings(
     defaultModel: value?.defaultModel?.trim() ?? '',
     sharedSystemPrompt: value?.sharedSystemPrompt ?? '',
     lastKnownModels: normalizeModelList(value?.lastKnownModels),
+    uiLanguage: normalizeStoredUiLanguage(value?.uiLanguage),
     articleCache: mergeArticleCacheSettings(value?.articleCache),
     markdownExport: mergeMarkdownExportSettings(value?.markdownExport),
   };

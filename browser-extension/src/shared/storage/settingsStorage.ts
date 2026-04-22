@@ -5,6 +5,7 @@ import {
   type ExtensionSettingsInput,
   type ExtensionSettings,
 } from '../config/phase0';
+import { detectDefaultUiLanguage } from '../i18n/uiLanguage';
 
 /**
  * Popup と background が同じ保存形式を共有できるよう、storage への入出力はこの module に閉じ込める。
@@ -14,7 +15,16 @@ export async function loadExtensionSettings(): Promise<ExtensionSettings> {
   const storedValue = await getFromStorage<ExtensionSettingsInput>(
     EXTENSION_SETTINGS_STORAGE_KEY
   );
-  return mergeExtensionSettings(storedValue);
+  const normalized = mergeExtensionSettings(storedValue);
+
+  if (shouldDetectDefaultUiLanguage(storedValue)) {
+    return {
+      ...normalized,
+      uiLanguage: detectDefaultUiLanguage(),
+    };
+  }
+
+  return normalized;
 }
 
 export async function saveExtensionSettings(
@@ -84,4 +94,14 @@ function setInStorage<T>(key: string, value: T): Promise<void> {
       resolve();
     });
   });
+}
+
+function shouldDetectDefaultUiLanguage(
+  storedValue: ExtensionSettingsInput | undefined
+): boolean {
+  if (storedValue === undefined) {
+    return true;
+  }
+
+  return !Object.prototype.hasOwnProperty.call(storedValue, 'uiLanguage');
 }

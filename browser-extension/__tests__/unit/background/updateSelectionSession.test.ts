@@ -40,6 +40,10 @@ describe('updateSelectionSession', () => {
       apiBaseUrl: 'http://127.0.0.1:9000',
       defaultModel: 'gemini-2.5-flash',
       lastKnownModels: ['gemini-2.5-flash'],
+      uiLanguage: 'en',
+      articleCache: {
+        enableAutoCreate: true,
+      },
     });
     cropSelectionImageMock.mockResolvedValue({
       imageDataUrl: 'data:image/webp;base64,crop',

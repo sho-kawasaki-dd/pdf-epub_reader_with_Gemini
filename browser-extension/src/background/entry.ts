@@ -20,7 +20,9 @@ import {
   buildOverlayPayload,
 } from './usecases/updateSelectionSession';
 import { loadExtensionSettings } from '../shared/storage/settingsStorage';
+import { t } from '../shared/i18n/translator';
 import {
+  EXTENSION_SETTINGS_STORAGE_KEY,
   PHASE0_MENU_ID,
   PHASE3_ADD_SELECTION_COMMAND_ID,
   PHASE3_OPEN_OVERLAY_COMMAND_ID,
@@ -53,18 +55,26 @@ export function registerBackgroundRuntime(): void {
   console.log('Gem Read Background Service Worker Loaded');
 
   chrome.runtime.onInstalled.addListener(() => {
-    void ensurePhase0ContextMenu();
+    void refreshContextMenu();
   });
 
   chrome.runtime.onStartup.addListener(() => {
-    void ensurePhase0ContextMenu();
+    void refreshContextMenu();
+  });
+
+  chrome.storage.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes[EXTENSION_SETTINGS_STORAGE_KEY]) {
+      return;
+    }
+
+    void refreshContextMenu();
   });
 
   chrome.tabs.onRemoved?.addListener((tabId) => {
     void cleanupAnalysisSession(tabId, {
       shouldDeleteRemoteCache: true,
       invalidationReason: 'manual-delete',
-      notice: 'Article cache was cleared because the tab was closed.',
+      notice: '',
     });
   });
 
@@ -267,7 +277,7 @@ async function handleCacheOverlaySession(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to cache overlay session.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorCacheOverlaySession'),
     });
   }
 }
@@ -286,7 +296,7 @@ async function handleCacheBatchOverlaySession(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to cache batch overlay session.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorCacheBatchOverlaySession'),
     });
   }
 }
@@ -299,7 +309,7 @@ async function handleClearOverlaySession(
     await cleanupAnalysisSession(tabId, {
       shouldDeleteRemoteCache: true,
       invalidationReason: 'manual-delete',
-      notice: 'Article cache was cleared because the overlay session ended.',
+      notice: t(await getBackgroundUiLanguage(), 'bgNoticeOverlayClosed'),
     });
     sendResponse({ ok: true });
   } catch {
@@ -313,9 +323,10 @@ async function handleOpenOverlayRequest(
   try {
     const targetTab = await resolveTargetTab();
     if (!targetTab?.id) {
+      const language = await getBackgroundUiLanguage();
       sendResponse({
         ok: false,
-        error: 'No active browser tab is available for Gem Read.',
+        error: t(language, 'bgErrorNoActiveTab'),
       });
       return;
     }
@@ -328,7 +339,7 @@ async function handleOpenOverlayRequest(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to open the Gem Read overlay.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorOpenOverlay'),
     });
   }
 }
@@ -356,6 +367,7 @@ async function handleRectangleSelectionStart(
   }
 
   try {
+    const settings = await loadExtensionSettings();
     const response = (await chrome.tabs.sendMessage(tab.id, {
       type: 'phase2.beginRectangleSelection',
       payload: { triggerSource },
@@ -369,22 +381,25 @@ async function handleRectangleSelectionStart(
       type: 'phase0.renderOverlay',
       payload: {
         status: 'error',
+        uiLanguage: settings.uiLanguage,
         selectedText: '',
         error:
           response.error ??
-          'Rectangle selection could not be started on this page.',
+          t(settings.uiLanguage, 'bgErrorRectangleStart'),
       },
     });
   } catch (error) {
+    const settings = await loadExtensionSettings();
     await chrome.tabs.sendMessage(tab.id, {
       type: 'phase0.renderOverlay',
       payload: {
         status: 'error',
+        uiLanguage: settings.uiLanguage,
         selectedText: '',
         error:
           error instanceof Error
             ? error.message
-            : 'Rectangle selection could not be started on this page.',
+            : t(settings.uiLanguage, 'bgErrorRectangleStart'),
       },
     });
   }
@@ -410,7 +425,10 @@ async function handleOverlayAction(
   } catch (error) {
     sendResponse({
       ok: false,
-      error: error instanceof Error ? error.message : 'Overlay action failed.',
+      error:
+        error instanceof Error
+          ? error.message
+          : t(await getBackgroundUiLanguage(), 'bgErrorOverlayAction'),
     });
   }
 }
@@ -436,7 +454,7 @@ async function handleAppendSessionItem(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to append selection item.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorAppendSelection'),
     });
   }
 }
@@ -458,7 +476,7 @@ async function handleRemoveSessionItem(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to remove selection item.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorRemoveSelection'),
     });
   }
 }
@@ -484,7 +502,7 @@ async function handleToggleSessionItemImage(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to update selection image inclusion.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorToggleSelectionImage'),
     });
   }
 }
@@ -504,7 +522,7 @@ async function handleDeleteActiveArticleCache(
     const nextSession = await invalidateArticleCache(session, {
       apiBaseUrl: settings.apiBaseUrl,
       reason: 'manual-delete',
-      notice: 'Article cache was deleted manually for this tab.',
+      notice: t(settings.uiLanguage, 'bgNoticeManualCacheDelete'),
     });
     await setAnalysisSession(tabId, nextSession);
     await renderOverlay(
@@ -512,6 +530,7 @@ async function handleDeleteActiveArticleCache(
       buildOverlayPayload(nextSession, {
         launcherOnly: false,
         preserveDrafts: true,
+        uiLanguage: settings.uiLanguage,
       })
     );
     sendResponse({ ok: true });
@@ -521,7 +540,7 @@ async function handleDeleteActiveArticleCache(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to delete the active article cache.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorDeleteActiveCache'),
     });
   }
 }
@@ -539,7 +558,7 @@ async function handleClearSelectionBatch(
       error:
         error instanceof Error
           ? error.message
-          : 'Failed to clear the selection batch.',
+          : t(await getBackgroundUiLanguage(), 'bgErrorClearSelectionBatch'),
     });
   }
 }
@@ -562,7 +581,10 @@ async function handleExportMarkdown(
   } catch (error) {
     sendResponse({
       ok: false,
-      error: error instanceof Error ? error.message : 'Markdown export failed.',
+      error:
+        error instanceof Error
+          ? error.message
+          : t(await getBackgroundUiLanguage(), 'bgErrorMarkdownExport'),
     });
   }
 }
@@ -606,9 +628,18 @@ async function cleanupAnalysisSession(
     await invalidateArticleCache(session, {
       apiBaseUrl: settings.apiBaseUrl,
       reason: options.invalidationReason,
-      notice: options.notice,
+      notice: options.notice || t(settings.uiLanguage, 'bgNoticeTabClosed'),
     });
   }
 
   await clearAnalysisSession(tabId);
+}
+
+async function refreshContextMenu(): Promise<void> {
+  const settings = await loadExtensionSettings();
+  await ensurePhase0ContextMenu(settings.uiLanguage);
+}
+
+async function getBackgroundUiLanguage() {
+  return (await loadExtensionSettings()).uiLanguage;
 }

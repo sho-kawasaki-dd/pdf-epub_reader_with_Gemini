@@ -1,18 +1,22 @@
 import {
   PHASE0_MENU_ID,
   PHASE2_RECTANGLE_MENU_ID,
+  type UiLanguage,
 } from '../../shared/config/phase0';
+import { t } from '../../shared/i18n/translator';
 
-export async function ensurePhase0ContextMenu(): Promise<void> {
+export async function ensurePhase0ContextMenu(
+  uiLanguage: UiLanguage
+): Promise<void> {
   await removeAllContextMenus();
   await createContextMenu({
     id: PHASE0_MENU_ID,
-    title: 'Gem Read で翻訳',
+    title: t(uiLanguage, 'menuTranslate'),
     contexts: ['selection'],
   });
   await createContextMenu({
     id: PHASE2_RECTANGLE_MENU_ID,
-    title: 'Gem Read で自由矩形選択を開始',
+    title: t(uiLanguage, 'menuRectangle'),
     contexts: ['page', 'image', 'video'],
   });
 }

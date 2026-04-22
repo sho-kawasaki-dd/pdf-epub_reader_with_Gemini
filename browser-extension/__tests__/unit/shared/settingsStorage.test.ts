@@ -21,6 +21,7 @@ describe('settingsStorage', () => {
       defaultModel: '',
       sharedSystemPrompt: '',
       lastKnownModels: [],
+      uiLanguage: 'en',
       articleCache: {
         enableAutoCreate: true,
       },
@@ -40,6 +41,7 @@ describe('settingsStorage', () => {
     const settings = await saveExtensionSettings({
       apiBaseUrl: 'http://localhost:8123/',
       defaultModel: ' gemini-2.5-pro ',
+      uiLanguage: 'ja',
       lastKnownModels: [
         'gemini-2.5-pro',
         'gemini-2.5-pro',
@@ -58,6 +60,7 @@ describe('settingsStorage', () => {
       defaultModel: 'gemini-2.5-pro',
       sharedSystemPrompt: '',
       lastKnownModels: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+      uiLanguage: 'ja',
       articleCache: {
         enableAutoCreate: true,
       },
@@ -102,6 +105,7 @@ describe('settingsStorage', () => {
       defaultModel: 'gemini-2.5-flash',
       sharedSystemPrompt: '',
       lastKnownModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+      uiLanguage: 'en',
       articleCache: {
         enableAutoCreate: true,
       },
@@ -208,6 +212,7 @@ describe('settingsStorage', () => {
       defaultModel: 'gemini-2.5-flash',
       sharedSystemPrompt: '',
       lastKnownModels: ['gemini-2.5-flash'],
+      uiLanguage: 'en',
       articleCache: {
         enableAutoCreate: true,
       },
@@ -220,5 +225,55 @@ describe('settingsStorage', () => {
         includeYamlFrontmatter: false,
       },
     });
+  });
+
+  it('detects ja as the default UI language when storage is empty', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.i18n.getUILanguage.mockReturnValue('ja-JP');
+
+    const settings = await loadExtensionSettings();
+
+    expect(settings.uiLanguage).toBe('ja');
+  });
+
+  it.each(['en-US', 'fr-FR', ''])(
+    'falls back to en for unsupported locale %s',
+    async (locale) => {
+      const chromeMock = getChromeMock();
+      chromeMock.i18n.getUILanguage.mockReturnValue(locale);
+
+      const settings = await loadExtensionSettings();
+
+      expect(settings.uiLanguage).toBe('en');
+    }
+  );
+
+  it('falls back to en when getUILanguage throws', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.i18n.getUILanguage.mockImplementation(() => {
+      throw new Error('i18n unavailable');
+    });
+
+    const settings = await loadExtensionSettings();
+
+    expect(settings.uiLanguage).toBe('en');
+  });
+
+  it('does not re-detect locale when stored uiLanguage is null', async () => {
+    const chromeMock = getChromeMock();
+    chromeMock.i18n.getUILanguage.mockReturnValue('ja-JP');
+    chromeMock.storage.local.set(
+      {
+        [EXTENSION_SETTINGS_STORAGE_KEY]: {
+          apiBaseUrl: 'http://localhost:8010/',
+          uiLanguage: null,
+        },
+      },
+      () => undefined
+    );
+
+    const settings = await loadExtensionSettings();
+
+    expect(settings.uiLanguage).toBe('en');
   });
 });

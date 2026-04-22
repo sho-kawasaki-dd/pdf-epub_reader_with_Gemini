@@ -212,6 +212,7 @@ export interface PopupStatusPayload {
 
 export interface OverlayPayload {
   status: OverlayStatus;
+  uiLanguage?: 'ja' | 'en';
   action?: AnalysisAction;
   modelName?: string;
   modelOptions?: ModelOption[];

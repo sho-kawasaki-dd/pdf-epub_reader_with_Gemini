@@ -1,4 +1,5 @@
 import { MAX_SELECTION_SESSION_ITEMS } from '../../shared/config/phase0';
+import type { UiLanguage } from '../../shared/config/phase0';
 import type {
   AnalysisAction,
   AppendSessionItemResponse,
@@ -12,6 +13,7 @@ import type {
   SelectionSessionItem,
   ToggleSessionItemImageResponse,
 } from '../../shared/contracts/messages';
+import { t } from '../../shared/i18n/translator';
 import { canAppendSelectionBatchItem } from '../selection/selectionBatchController';
 import { collectSelection } from '../selection/snapshotStore';
 
@@ -23,11 +25,12 @@ export async function runOverlayAction(
   action: AnalysisAction,
   modelName: string,
   customPrompt: string,
+  uiLanguage: UiLanguage,
   errorBox: HTMLElement,
   errorSection: HTMLElement
 ): Promise<void> {
   if (action === 'custom_prompt' && customPrompt.trim().length === 0) {
-    errorBox.textContent = 'Custom prompt cannot be empty.';
+    errorBox.textContent = t(uiLanguage, 'overlayErrorCustomPromptEmpty');
     errorSection.hidden = false;
     return;
   }
@@ -47,7 +50,8 @@ export async function runOverlayAction(
     | RunOverlayActionResponse
     | undefined;
   if (response && !response.ok) {
-    errorBox.textContent = response.error ?? 'Overlay action failed.';
+    errorBox.textContent =
+      response.error ?? t(uiLanguage, 'overlayErrorActionFailed');
     errorSection.hidden = false;
     return;
   }
@@ -62,7 +66,13 @@ export async function addCurrentSelection(
   payload: OverlayPayload
 ): Promise<void> {
   if (!canAppendSelectionBatchItem()) {
-    errorBox.textContent = `You can keep up to ${payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS} selections in one batch.`;
+    errorBox.textContent = t(
+      payload.uiLanguage ?? 'en',
+      'overlayErrorBatchLimit',
+      {
+        count: payload.maxSessionItems ?? MAX_SELECTION_SESSION_ITEMS,
+      }
+    );
     errorSection.hidden = false;
     return;
   }
@@ -71,7 +81,7 @@ export async function addCurrentSelection(
   if (!selection.ok || !selection.payload) {
     errorBox.textContent =
       selection.error ??
-      'A page selection is required before adding it to the batch.';
+      t(payload.uiLanguage ?? 'en', 'overlayErrorSelectionRequired');
     errorSection.hidden = false;
     return;
   }
@@ -86,7 +96,7 @@ export async function addCurrentSelection(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ?? 'Failed to add the current selection.';
+      response.error ?? t(payload.uiLanguage ?? 'en', 'overlayErrorAddSelection');
     errorSection.hidden = false;
     return;
   }
@@ -97,6 +107,7 @@ export async function addCurrentSelection(
 
 export async function removeSelectionItem(
   itemId: string,
+  uiLanguage: UiLanguage,
   errorBox: HTMLElement,
   errorSection: HTMLElement
 ): Promise<void> {
@@ -107,7 +118,7 @@ export async function removeSelectionItem(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ?? 'Failed to remove the selection item.';
+      response.error ?? t(uiLanguage, 'overlayErrorRemoveSelection');
     errorSection.hidden = false;
     return;
   }
@@ -119,6 +130,7 @@ export async function removeSelectionItem(
 export async function toggleSelectionItemImage(
   itemId: string,
   includeImage: boolean,
+  uiLanguage: UiLanguage,
   errorBox: HTMLElement,
   errorSection: HTMLElement
 ): Promise<void> {
@@ -129,8 +141,7 @@ export async function toggleSelectionItemImage(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ??
-      'Failed to update image inclusion for the selection item.';
+      response.error ?? t(uiLanguage, 'overlayErrorToggleImage');
     errorSection.hidden = false;
     return;
   }
@@ -140,6 +151,7 @@ export async function toggleSelectionItemImage(
 }
 
 export async function deleteActiveArticleCache(
+  uiLanguage: UiLanguage,
   errorBox: HTMLElement,
   errorSection: HTMLElement
 ): Promise<void> {
@@ -149,7 +161,7 @@ export async function deleteActiveArticleCache(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ?? 'Failed to delete the active article cache.';
+      response.error ?? t(uiLanguage, 'overlayErrorDeleteCache');
     errorSection.hidden = false;
     return;
   }
@@ -162,6 +174,7 @@ export async function exportCurrentMarkdown(
   payload: OverlayPayload,
   sessionItems: SelectionSessionItem[],
   selectedText: string,
+  uiLanguage: UiLanguage,
   errorBox: HTMLElement,
   errorSection: HTMLElement
 ): Promise<void> {
@@ -177,7 +190,7 @@ export async function exportCurrentMarkdown(
 
   if (response?.ok === false) {
     errorBox.textContent =
-      response.error ?? 'Failed to export the current Gemini result.';
+      response.error ?? t(uiLanguage, 'overlayErrorExport');
     errorSection.hidden = false;
     return;
   }
