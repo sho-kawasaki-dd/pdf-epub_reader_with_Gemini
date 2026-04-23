@@ -51,6 +51,11 @@ class RaisingCaptureGateway:
         raise RuntimeError("capture failed")
 
 
+class RaisingAIGateway:
+    async def analyze(self, request):
+        raise RuntimeError("analysis failed")
+
+
 def test_initial_state_is_idle() -> None:
     view = MockDesktopCaptureView()
     presenter = DesktopCapturePresenter(
@@ -155,4 +160,27 @@ async def test_submit_selection_surfaces_capture_errors() -> None:
     assert presenter.state is CaptureFlowState.SHOWING_ERROR
     assert view.error_calls == [
         "Failed to capture the selected area: capture failed",
+    ]
+
+
+async def test_submit_selection_surfaces_analysis_errors() -> None:
+    view = MockDesktopCaptureView()
+    presenter = DesktopCapturePresenter(
+        view=view,
+        capture_gateway=FakeCaptureGateway(),
+        ai_gateway=RaisingAIGateway(),
+        config=DesktopCaptureConfig(),
+    )
+
+    result = await presenter.submit_selection(CaptureRect(0, 0, 10, 10))
+
+    assert result is None
+    assert presenter.state is CaptureFlowState.SHOWING_ERROR
+    assert view.status_calls == [
+        (CaptureFlowState.IDLE, "Ready to capture."),
+        (CaptureFlowState.CAPTURING, "Capturing selection..."),
+        (CaptureFlowState.ANALYZING, "Analyzing capture..."),
+    ]
+    assert view.error_calls == [
+        "Failed to analyze the captured image: analysis failed",
     ]
