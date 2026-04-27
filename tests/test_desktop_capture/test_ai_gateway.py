@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pdf_epub_reader.dto import ModelInfo
+
 from desktop_capture.adapters.ai_gateway import DesktopCaptureGeminiGateway
 from desktop_capture.config import DesktopCaptureConfig
 
@@ -12,6 +14,10 @@ class FakeAIModel:
         self.calls.append(request)
         return "result"
 
+    async def list_available_models(self):
+        self.calls.append("list_available_models")
+        return [ModelInfo(model_id="models/gemini-test", display_name="Gemini Test")]
+
 
 async def test_ai_gateway_forwards_analyze_requests() -> None:
     ai_model = FakeAIModel()
@@ -21,6 +27,18 @@ async def test_ai_gateway_forwards_analyze_requests() -> None:
 
     assert result == "result"
     assert ai_model.calls == ["request"]
+
+
+async def test_ai_gateway_forwards_model_listing_requests() -> None:
+    ai_model = FakeAIModel()
+    gateway = DesktopCaptureGeminiGateway(ai_model)  # type: ignore[arg-type]
+
+    result = await gateway.list_available_models()
+
+    assert result == [
+        ModelInfo(model_id="models/gemini-test", display_name="Gemini Test")
+    ]
+    assert ai_model.calls == ["list_available_models"]
 
 
 def test_ai_gateway_from_config_bridges_desktop_capture_settings(monkeypatch) -> None:

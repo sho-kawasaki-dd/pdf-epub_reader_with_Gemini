@@ -77,7 +77,7 @@ def test_request_capture_sets_selecting_state() -> None:
         view=view,
         capture_gateway=FakeCaptureGateway(),
         ai_gateway=FakeAIGateway(),
-        config=DesktopCaptureConfig(),
+        config=DesktopCaptureConfig(gemini_model_name="models/gemini-2.5-flash"),
     )
 
     presenter.request_capture()
@@ -98,7 +98,7 @@ async def test_submit_selection_builds_translation_only_request() -> None:
         capture_gateway=capture_gateway,
         ai_gateway=ai_gateway,
         config=DesktopCaptureConfig(
-            gemini_model_name="gemini-2.5-flash",
+            gemini_model_name="models/gemini-2.5-flash",
             output_language="English",
         ),
     )
@@ -113,7 +113,7 @@ async def test_submit_selection_builds_translation_only_request() -> None:
     assert request.mode.value == "translation"
     assert request.include_explanation is False
     assert request.images == [b"image-bytes"]
-    assert request.model_name == "gemini-2.5-flash"
+    assert request.model_name == "models/gemini-2.5-flash"
     assert "Translate the given text into English" in request.system_prompt
     assert view.result_calls == [result]
     assert view.error_calls == []
@@ -133,7 +133,7 @@ async def test_submit_selection_rejects_zero_sized_rect() -> None:
         view=view,
         capture_gateway=capture_gateway,
         ai_gateway=ai_gateway,
-        config=DesktopCaptureConfig(),
+        config=DesktopCaptureConfig(gemini_model_name="models/gemini-2.5-flash"),
     )
 
     result = await presenter.submit_selection(CaptureRect(0, 0, 0, 10))
@@ -151,7 +151,7 @@ async def test_submit_selection_surfaces_capture_errors() -> None:
         view=view,
         capture_gateway=RaisingCaptureGateway(),
         ai_gateway=FakeAIGateway(),
-        config=DesktopCaptureConfig(),
+        config=DesktopCaptureConfig(gemini_model_name="models/gemini-2.5-flash"),
     )
 
     result = await presenter.submit_selection(CaptureRect(0, 0, 10, 10))
@@ -169,7 +169,7 @@ async def test_submit_selection_surfaces_analysis_errors() -> None:
         view=view,
         capture_gateway=FakeCaptureGateway(),
         ai_gateway=RaisingAIGateway(),
-        config=DesktopCaptureConfig(),
+        config=DesktopCaptureConfig(gemini_model_name="models/gemini-2.5-flash"),
     )
 
     result = await presenter.submit_selection(CaptureRect(0, 0, 10, 10))
@@ -184,3 +184,23 @@ async def test_submit_selection_surfaces_analysis_errors() -> None:
     assert view.error_calls == [
         "Failed to analyze the captured image: analysis failed",
     ]
+
+
+async def test_submit_selection_requires_model_name_before_capture() -> None:
+    view = MockDesktopCaptureView()
+    capture_gateway = FakeCaptureGateway()
+    ai_gateway = FakeAIGateway()
+    presenter = DesktopCapturePresenter(
+        view=view,
+        capture_gateway=capture_gateway,
+        ai_gateway=ai_gateway,
+        config=DesktopCaptureConfig(gemini_model_name=""),
+    )
+
+    result = await presenter.submit_selection(CaptureRect(0, 0, 10, 10))
+
+    assert result is None
+    assert presenter.state is CaptureFlowState.SHOWING_ERROR
+    assert capture_gateway.calls == []
+    assert ai_gateway.calls == []
+    assert view.error_calls == ["Select a Gemini model before capturing."]

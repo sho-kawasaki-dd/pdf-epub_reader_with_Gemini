@@ -71,6 +71,11 @@ class DesktopCapturePresenter:
             self._show_error("Select a non-empty area before capturing.")
             return None
 
+        selected_model_name = self._config.gemini_model_name.strip()
+        if not selected_model_name:
+            self._show_error("Select a Gemini model before capturing.")
+            return None
+
         self._last_error = None
         self._set_state(CaptureFlowState.CAPTURING, "Capturing selection...")
 
@@ -93,7 +98,7 @@ class DesktopCapturePresenter:
             include_explanation=False,
             system_prompt=self._build_system_prompt(),
             images=[captured_image.image_bytes],
-            model_name=self._config.gemini_model_name or None,
+            model_name=selected_model_name,
         )
 
         try:

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from pdf_epub_reader.dto.ai_dto import AnalysisRequest, AnalysisResult
+from pdf_epub_reader.dto.ai_dto import AnalysisRequest, AnalysisResult, ModelInfo
 
 
 class CaptureFlowState(Enum):
@@ -55,6 +55,8 @@ class DesktopCaptureAIGateway(Protocol):
     """Service boundary for sending a prepared analysis request to Gemini."""
 
     async def analyze(self, request: AnalysisRequest) -> AnalysisResult: ...
+
+    async def list_available_models(self) -> list[ModelInfo]: ...
 
 
 @runtime_checkable

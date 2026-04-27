@@ -56,3 +56,22 @@ def test_cancel_countdown_restores_idle_status() -> None:
 
     assert panel.is_countdown_active() is False
     assert panel.status_text() == "Choose how to start capture."
+
+
+def test_model_selection_shows_initial_config_value() -> None:
+    _get_app()
+    panel = CaptureTriggerPanel()
+
+    panel.set_model_options([], "models/gemini-2.5-flash")
+
+    assert panel.selected_model_name() == "models/gemini-2.5-flash"
+    assert panel.available_model_names() == ["models/gemini-2.5-flash"]
+
+
+def test_model_error_text_can_be_shown_without_modal_dialog() -> None:
+    _get_app()
+    panel = CaptureTriggerPanel()
+
+    panel.set_model_error_text("Could not fetch Gemini models: missing API key")
+
+    assert panel.model_error_text() == "Could not fetch Gemini models: missing API key"

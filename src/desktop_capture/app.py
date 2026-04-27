@@ -9,6 +9,7 @@ import logging
 import dotenv
 from PySide6.QtWidgets import QStyle, QWidget
 
+from pdf_epub_reader.dto import ModelInfo
 from pdf_epub_reader.infrastructure.event_loop import run_app
 
 from desktop_capture.adapters.ai_gateway import DesktopCaptureGeminiGateway
@@ -16,7 +17,7 @@ from desktop_capture.capture.hotkey import GlobalHotkeyManager
 from desktop_capture.capture.overlay import ScreenScaleContext, SelectionOverlay
 from desktop_capture.capture.screenshot import MssCaptureGateway
 from desktop_capture.capture.trigger_panel import CaptureTriggerPanel
-from desktop_capture.config import DesktopCaptureConfig, load_config
+from desktop_capture.config import DesktopCaptureConfig, load_config, save_config
 from desktop_capture.contracts import CaptureRect
 from desktop_capture.presenter import DesktopCapturePresenter
 from desktop_capture.result_window import DesktopCaptureResultWindow
@@ -45,6 +46,14 @@ class _DesktopCaptureRuntime:
 
     def start(self) -> None:
         self._trigger_panel.set_on_capture_requested(self.start_capture_flow)
+        self._trigger_panel.set_on_model_changed(self._handle_model_name_changed)
+        self._trigger_panel.set_on_fetch_models_requested(
+            self._handle_fetch_models_requested
+        )
+        self._trigger_panel.set_model_options(
+            self._build_model_choices([]),
+            self._config.gemini_model_name,
+        )
         self._trigger_panel.setWindowIcon(self._trigger_panel.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
 
         registration = self._hotkey_manager.register(self._config.hotkey)
@@ -104,6 +113,61 @@ class _DesktopCaptureRuntime:
                 self._trigger_panel.set_status_text("Capture complete.")
         finally:
             self._trigger_panel.set_busy(False)
+
+    def _handle_model_name_changed(self, model_name: str) -> None:
+        normalized_model_name = model_name.strip()
+        if normalized_model_name == self._config.gemini_model_name:
+            return
+        self._config.gemini_model_name = normalized_model_name
+        save_config(self._config)
+        self._trigger_panel.set_model_error_text("")
+
+    def _handle_fetch_models_requested(self) -> None:
+        asyncio.create_task(self._refresh_available_models())
+
+    async def _refresh_available_models(self) -> None:
+        self._trigger_panel.set_model_fetch_in_progress(True)
+        self._trigger_panel.set_model_error_text("")
+        try:
+            models = await self._ai_gateway.list_available_models()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to fetch Gemini models: %s", exc)
+            self._trigger_panel.set_model_error_text(
+                f"Could not fetch Gemini models: {exc}"
+            )
+            self._trigger_panel.set_model_options(
+                self._build_model_choices([]),
+                self._config.gemini_model_name,
+            )
+            return
+        finally:
+            self._trigger_panel.set_model_fetch_in_progress(False)
+
+        self._trigger_panel.set_model_options(
+            self._build_model_choices(models),
+            self._config.gemini_model_name,
+        )
+        if not models:
+            self._trigger_panel.set_model_error_text(
+                "No Gemini models are available for the current API key."
+            )
+
+    def _build_model_choices(self, models: list[ModelInfo]) -> list[str]:
+        model_names: list[str] = []
+        seen_model_names: set[str] = set()
+
+        for model in models:
+            model_id = model.model_id.strip()
+            if not model_id or model_id in seen_model_names:
+                continue
+            model_names.append(model_id)
+            seen_model_names.add(model_id)
+
+        current_model_name = self._config.gemini_model_name.strip()
+        if current_model_name and current_model_name not in seen_model_names:
+            model_names.insert(0, current_model_name)
+
+        return model_names
 
     @staticmethod
     def _resolve_scale_context(screen) -> ScreenScaleContext:
