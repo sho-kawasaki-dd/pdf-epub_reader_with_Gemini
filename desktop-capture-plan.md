@@ -191,9 +191,10 @@ class DesktopCaptureConfig:
 - [x] `capture/hotkey.py`：`ctypes.windll.user32.RegisterHotKey` でグローバルホットキー（例: `Ctrl+Shift+G`）を登録
 - [x] `capture/trigger_panel.py`：`Capture now` / `Capture in 3s` / `Capture in 5s` の代替起動 UI を追加
 - [x] `pyproject.toml` に `mss` を追加（ホットキーは標準ライブラリで実装）
-- [ ] **実機確認:** `RegisterHotKey` が登録できるか、競合時に遅延キャプチャへフォールバックできるか、mss で Kindle 画面がキャプチャできるか検証する
+- [x] **実機確認:** `RegisterHotKey` が登録できるか、競合時に遅延キャプチャへフォールバックできるか、mss で Kindle 画面がキャプチャできるか検証する
 
 > **注意:** `RegisterHotKey` はキーボード hook より検知リスクが低いが、予約済みキーや他アプリとの競合で登録に失敗することがある。その場合は trigger panel からの即時/遅延キャプチャを使う。
+> **実機確認結果(2026-04-27)** Kindle for PC で mss を用いたキャプチャおよび翻訳結果取得は成功。楽天koboはDRM の影響で真っ黒画像になるため、Phase 1.5 で WGC フォールバックを実装する必要がある。モニターが複数ある場合に、対象となるモニターを選択できるようにしたい。
 
 ### Phase 1.5 — WGC フォールバック（DRM 対策）
 
@@ -229,8 +230,6 @@ class DesktopCaptureConfig:
   class CaptureGateway(Protocol):
       async def capture(self, request: CaptureRequest) -> CaptureResult: ...
   ```
-
-````
 
 - [ ] `capture/screenshot.py` を `MssCaptureGateway` として `CaptureGateway` に準拠させリファクタ
 - [ ] `capture/wgc_backend.py`：外部 `capture-helper.exe` を `subprocess` で呼び出す WGC クライアント実装
