@@ -108,6 +108,16 @@ class IMainView(Protocol):
         """
         ...
 
+    def show_plotly_spec_picker(
+        self,
+        title: str,
+        label: str,
+        items: list[str],
+        cancel_button_text: str,
+    ) -> int | None:
+        """複数 Plotly spec から 1 件を選ばせ、選択 index を返す。"""
+        ...
+
     # --- Callback registration (View → Presenter) ---
     # View は Presenter を直接知らないため、イベント発生時に呼ぶ関数だけを
     # 事前登録してもらう。この形にすると Passive View を保ちやすい。

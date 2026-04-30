@@ -377,6 +377,27 @@ class MainWindow(QMainWindow):
             return None
         return password
 
+    def show_plotly_spec_picker(
+        self,
+        title: str,
+        label: str,
+        items: list[str],
+        cancel_button_text: str,
+    ) -> int | None:
+        """複数 Plotly 可視化候補から表示対象を選択する。"""
+        dialog = QInputDialog(self)
+        dialog.setInputMode(QInputDialog.InputMode.TextInput)
+        dialog.setComboBoxEditable(False)
+        dialog.setComboBoxItems(items)
+        dialog.setWindowTitle(title)
+        dialog.setLabelText(label)
+        dialog.setOkButtonText(self.tr("OK"))
+        dialog.setCancelButtonText(cancel_button_text)
+
+        if dialog.exec() != QInputDialog.DialogCode.Accepted:
+            return None
+        return dialog.comboBox().currentIndex()
+
     def set_high_quality_downscale(self, enabled: bool) -> None:
         """高品質縮小 (Pillow LANCZOS) の有効/無効を切り替え、即反映する。"""
         self._doc_view._high_quality_downscale = enabled

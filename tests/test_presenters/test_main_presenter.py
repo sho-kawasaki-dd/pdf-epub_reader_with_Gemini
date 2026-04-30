@@ -25,6 +25,7 @@ from pdf_epub_reader.dto import (
     AnalysisResult,
     CacheStatus,
     ModelInfo,
+    PlotlySpec,
     RectCoords,
     SelectionContent,
     SelectionSlot,
@@ -1790,3 +1791,199 @@ class TestMarkdownExportFlow:
 
         status_message = mock_main_view.get_calls("show_status_message")[-1][0]
         assert "Failed to export Markdown:" in status_message
+
+
+class _DummyPlotWindow:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def show_figure_html(self, html: str, title: str) -> None:
+        self.calls.append((html, title))
+
+
+class TestPlotlyRenderFlow:
+    def test_single_plotly_spec_renders_immediately(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        created_windows: list[_DummyPlotWindow] = []
+
+        def build_window() -> _DummyPlotWindow:
+            window = _DummyPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            [
+                PlotlySpec(
+                    index=0,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="Velocity Plot",
+                )
+            ]
+        )
+
+        assert len(created_windows) == 1
+        assert len(created_windows[0].calls) == 1
+        html, title = created_windows[0].calls[0]
+        assert "<html" in html.lower()
+        assert title == "Plotly Visualization - Velocity Plot"
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "Opened Plotly visualization: Velocity Plot",
+        )
+
+    def test_multiple_specs_prompt_mode_uses_view_picker(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        created_windows: list[_DummyPlotWindow] = []
+        mock_main_view._plotly_picker_return = 1
+
+        def build_window() -> _DummyPlotWindow:
+            window = _DummyPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en", plotly_multi_spec_mode="prompt"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            [
+                PlotlySpec(
+                    index=0,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="Plot A",
+                ),
+                PlotlySpec(
+                    index=1,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="Plot B",
+                ),
+            ]
+        )
+
+        picker_call = mock_main_view.get_calls("show_plotly_spec_picker")[-1]
+        assert picker_call == (
+            "Choose Plotly Visualization",
+            "Select a visualization to open:",
+            ["Plot A", "Plot B"],
+            "Cancel",
+        )
+        assert len(created_windows) == 1
+        assert created_windows[0].calls[0][1] == "Plotly Visualization - Plot B"
+
+    def test_multiple_specs_first_only_mode_skips_picker(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        created_windows: list[_DummyPlotWindow] = []
+        mock_main_view._plotly_picker_return = 1
+
+        def build_window() -> _DummyPlotWindow:
+            window = _DummyPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en", plotly_multi_spec_mode="first_only"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            [
+                PlotlySpec(
+                    index=0,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="First Plot",
+                ),
+                PlotlySpec(
+                    index=1,
+                    language="json",
+                    source_text='{"data": [], "layout": {}}',
+                    title="Second Plot",
+                ),
+            ]
+        )
+
+        assert mock_main_view.get_calls("show_plotly_spec_picker") == []
+        assert len(created_windows) == 1
+        assert created_windows[0].calls[0][1] == "Plotly Visualization - First Plot"
+
+    def test_plotly_render_failure_reports_status_without_opening_window(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        created_windows: list[_DummyPlotWindow] = []
+
+        def build_window() -> _DummyPlotWindow:
+            window = _DummyPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            [
+                PlotlySpec(
+                    index=0,
+                    language="json",
+                    source_text="{broken",
+                    title="Broken Plot",
+                )
+            ]
+        )
+
+        assert created_windows == []
+        assert "The Plotly JSON is invalid:" in mock_main_view.get_calls(
+            "show_status_message"
+        )[-1][0]

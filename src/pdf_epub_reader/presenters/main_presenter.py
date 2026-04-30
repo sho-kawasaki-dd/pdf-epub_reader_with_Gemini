@@ -15,9 +15,11 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Protocol
 
 from pdf_epub_reader.dto import (
     PageData,
+    PlotlySpec,
     RectCoords,
     SelectionContent,
     SelectionSlot,
@@ -39,6 +41,11 @@ from pdf_epub_reader.services.markdown_export_service import (
     build_markdown_export_document,
     build_markdown_export_filename,
 )
+from pdf_epub_reader.services.plotly_render_service import (
+    PlotlyRenderError,
+    figure_to_html,
+    parse_spec,
+)
 from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import (
     AppConfig,
@@ -53,6 +60,10 @@ from pdf_epub_reader.utils.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _PlotWindowLike(Protocol):
+    def show_figure_html(self, html: str, title: str) -> None: ...
 
 
 class MainPresenter:
@@ -72,6 +83,7 @@ class MainPresenter:
         language_view_factory: Callable[[str], ILanguageDialogView] | None = None,
         ai_model: IAIModel | None = None,
         cache_dialog_view_factory: Callable[[str], ICacheDialogView] | None = None,
+        plot_window_factory: Callable[[], _PlotWindowLike] | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -97,6 +109,9 @@ class MainPresenter:
         self._language_view_factory = language_view_factory
         self._ai_model = ai_model
         self._cache_dialog_view_factory = cache_dialog_view_factory
+        self._plot_window_factory = (
+            plot_window_factory or self._build_plot_window
+        )
         self._base_dpi: int = self._config.default_dpi
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
@@ -105,6 +120,7 @@ class MainPresenter:
         self._selection_generation: int = 0
         self._next_selection_id: int = 1
         self._selection_warning_threshold = 10
+        self._plot_windows: list[_PlotWindowLike] = []
 
         # View は Presenter を知らないため、ここでイベントの受け口を登録する。
         self._view.set_on_file_open_requested(self._on_file_open_requested)
@@ -149,6 +165,9 @@ class MainPresenter:
         )
         self._panel_presenter.set_on_plotly_toggle_changed_handler(
             self._on_plotly_toggle_changed
+        )
+        self._panel_presenter.set_on_plotly_render_handler(
+            self._on_plotly_render
         )
 
         # Phase 7: キャッシュ操作のコールバックを登録
@@ -856,6 +875,38 @@ class MainPresenter:
         self._config.plotly_visualization_enabled = checked
         save_config(self._config)
 
+    def _on_plotly_render(self, specs: list[PlotlySpec]) -> None:
+        """PanelPresenter から渡された Plotly spec を復元して表示する。"""
+        if not specs:
+            return
+
+        plotly_texts = self._translation_service.build_plotly_texts(
+            self._config.ui_language
+        )
+        selected = self._select_plotly_spec(specs, plotly_texts)
+        if selected is None:
+            return
+
+        title = self._resolve_plotly_spec_title(selected, plotly_texts)
+        try:
+            figure = parse_spec(selected)
+            html = figure_to_html(figure)
+        except PlotlyRenderError as exc:
+            self._view.show_status_message(
+                self._build_plotly_render_error_message(exc, plotly_texts)
+            )
+            return
+
+        window = self._plot_window_factory()
+        self._plot_windows.append(window)
+        window.show_figure_html(
+            html,
+            plotly_texts.window_title_template.format(title=title),
+        )
+        self._view.show_status_message(
+            plotly_texts.render_success_message_template.format(title=title)
+        )
+
     def _show_open_error(self, details: str) -> None:
         self._view.show_error_dialog(
             self._translate("main.error.open.title"),
@@ -874,6 +925,55 @@ class MainPresenter:
             self._config.ui_language,
             **kwargs,
         )
+
+    def _select_plotly_spec(
+        self,
+        specs: list[PlotlySpec],
+        plotly_texts,
+    ) -> PlotlySpec | None:
+        if len(specs) == 1 or self._config.plotly_multi_spec_mode == "first_only":
+            return specs[0]
+
+        labels = [
+            self._resolve_plotly_spec_title(spec, plotly_texts)
+            for spec in specs
+        ]
+        selected_index = self._view.show_plotly_spec_picker(
+            plotly_texts.multi_select_dialog_title,
+            plotly_texts.multi_select_dialog_label,
+            labels,
+            plotly_texts.multi_select_cancel_button_text,
+        )
+        if selected_index is None:
+            return None
+        if selected_index < 0 or selected_index >= len(specs):
+            return None
+        return specs[selected_index]
+
+    def _resolve_plotly_spec_title(self, spec: PlotlySpec, plotly_texts) -> str:
+        if spec.title:
+            return spec.title
+        return plotly_texts.spec_fallback_title_template.format(
+            index=spec.index + 1
+        )
+
+    def _build_plotly_render_error_message(
+        self,
+        error: PlotlyRenderError,
+        plotly_texts,
+    ) -> str:
+        if error.code == "invalid_json":
+            return plotly_texts.invalid_json_message_template.format(
+                details=error.details
+            )
+        return plotly_texts.restore_failed_message_template.format(
+            details=error.details
+        )
+
+    def _build_plot_window(self) -> _PlotWindowLike:
+        from pdf_epub_reader.views.plot_window import PlotWindow
+
+        return PlotWindow()
 
     async def _reload_layout(self) -> None:
         """DPI 変更後にプレースホルダーを再計算し再描画する。

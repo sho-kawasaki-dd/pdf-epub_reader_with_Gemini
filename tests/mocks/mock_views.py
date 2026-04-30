@@ -36,6 +36,7 @@ class MockMainView:
         # show_password_dialog が返す固定値。テスト側で変更可能。
         # None を設定するとキャンセル動作を再現する。
         self._password_dialog_return: str | None = "test123"
+        self._plotly_picker_return: int | None = 0
 
         # Presenter から登録されたコールバックを保持する。
         # simulate_* メソッドはこれらを呼び出してユーザー操作を擬似再現する。
@@ -118,6 +119,21 @@ class MockMainView:
         """パスワード入力ダイアログの Mock。_password_dialog_return を返す。"""
         self.calls.append(("show_password_dialog", (title, message)))
         return self._password_dialog_return
+
+    def show_plotly_spec_picker(
+        self,
+        title: str,
+        label: str,
+        items: list[str],
+        cancel_button_text: str,
+    ) -> int | None:
+        self.calls.append(
+            (
+                "show_plotly_spec_picker",
+                (title, label, items, cancel_button_text),
+            )
+        )
+        return self._plotly_picker_return
 
     # --- Callback registration ---
     # View 自身はロジックを持たず、Presenter から受け取った関数を保持するだけにする。
