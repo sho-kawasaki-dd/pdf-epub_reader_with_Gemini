@@ -448,6 +448,36 @@ class ISettingsDialogView(Protocol):
         """Context Cache の TTL（分）を取得する。"""
         ...
 
+    # --- Phase 8: Export タブ Getters ---
+
+    def get_export_folder(self) -> str:
+        """Markdown export の保存先フォルダを取得する。"""
+        ...
+
+    def get_export_include_explanation(self) -> bool:
+        """解説を export に含めるかを取得する。"""
+        ...
+
+    def get_export_include_selection_list(self) -> bool:
+        """選択元テキスト一覧を export に含めるかを取得する。"""
+        ...
+
+    def get_export_include_raw_response(self) -> bool:
+        """生レスポンスを export に含めるかを取得する。"""
+        ...
+
+    def get_export_include_document_metadata(self) -> bool:
+        """文書メタデータを export に含めるかを取得する。"""
+        ...
+
+    def get_export_include_usage_metrics(self) -> bool:
+        """使用量メトリクスを export に含めるかを取得する。"""
+        ...
+
+    def get_export_include_yaml_frontmatter(self) -> bool:
+        """YAML frontmatter を export に含めるかを取得する。"""
+        ...
+
     # --- Phase 6: AI Models タブ Setters ---
 
     def set_gemini_model_name(self, value: str) -> None:
@@ -468,6 +498,36 @@ class ISettingsDialogView(Protocol):
 
     def set_cache_ttl_minutes(self, value: int) -> None:
         """Context Cache の TTL（分）を設定する。"""
+        ...
+
+    # --- Phase 8: Export タブ Setters ---
+
+    def set_export_folder(self, value: str) -> None:
+        """Markdown export の保存先フォルダを設定する。"""
+        ...
+
+    def set_export_include_explanation(self, value: bool) -> None:
+        """解説を export に含めるかを設定する。"""
+        ...
+
+    def set_export_include_selection_list(self, value: bool) -> None:
+        """選択元テキスト一覧を export に含めるかを設定する。"""
+        ...
+
+    def set_export_include_raw_response(self, value: bool) -> None:
+        """生レスポンスを export に含めるかを設定する。"""
+        ...
+
+    def set_export_include_document_metadata(self, value: bool) -> None:
+        """文書メタデータを export に含めるかを設定する。"""
+        ...
+
+    def set_export_include_usage_metrics(self, value: bool) -> None:
+        """使用量メトリクスを export に含めるかを設定する。"""
+        ...
+
+    def set_export_include_yaml_frontmatter(self, value: bool) -> None:
+        """YAML frontmatter を export に含めるかを設定する。"""
         ...
 
     def set_available_models_for_selection(

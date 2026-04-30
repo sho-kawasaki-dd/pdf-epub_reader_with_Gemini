@@ -3,11 +3,12 @@
 ISettingsDialogView Protocol を満たすモーダル QDialog。
 OK / Cancel で一括適用し、「Reset to Defaults」でデフォルト復帰する。
 
-3 タブ構成:
+4 タブ構成:
 - Rendering: Image Format, JPEG Quality, Default DPI, Page Cache Size
 - Detection: Auto-detect embedded images, Auto-detect math fonts
 - AI Models: Default Model, Available Models (Fetch), Output Language,
              System Prompt Translation
+- Export: Export folder and Markdown section toggles
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -190,6 +192,41 @@ class SettingsDialog(QDialog):
 
         self._tabs.addTab(ai_tab, "")
 
+        # --- Export タブ ---
+        export_tab = QWidget()
+        export_layout = QFormLayout(export_tab)
+
+        self._export_folder_label = QLabel("")
+        self._export_folder_edit = QLineEdit()
+        self._export_browse_button = QPushButton("")
+        self._export_browse_button.clicked.connect(
+            self._handle_browse_export_folder
+        )
+        export_folder_row = QHBoxLayout()
+        export_folder_row.addWidget(self._export_folder_edit)
+        export_folder_row.addWidget(self._export_browse_button)
+        export_layout.addRow(self._export_folder_label, export_folder_row)
+
+        self._export_include_explanation_check = QCheckBox("")
+        export_layout.addRow(self._export_include_explanation_check)
+
+        self._export_include_selection_list_check = QCheckBox("")
+        export_layout.addRow(self._export_include_selection_list_check)
+
+        self._export_include_raw_response_check = QCheckBox("")
+        export_layout.addRow(self._export_include_raw_response_check)
+
+        self._export_include_document_metadata_check = QCheckBox("")
+        export_layout.addRow(self._export_include_document_metadata_check)
+
+        self._export_include_usage_metrics_check = QCheckBox("")
+        export_layout.addRow(self._export_include_usage_metrics_check)
+
+        self._export_include_yaml_frontmatter_check = QCheckBox("")
+        export_layout.addRow(self._export_include_yaml_frontmatter_check)
+
+        self._tabs.addTab(export_tab, "")
+
         # --- ボタン行 ---
         button_layout = QHBoxLayout()
 
@@ -269,6 +306,29 @@ class SettingsDialog(QDialog):
     def get_cache_ttl_minutes(self) -> int:
         return self._cache_ttl_spin.value()
 
+    # --- Phase 8: Export タブ Getters ---
+
+    def get_export_folder(self) -> str:
+        return self._export_folder_edit.text()
+
+    def get_export_include_explanation(self) -> bool:
+        return self._export_include_explanation_check.isChecked()
+
+    def get_export_include_selection_list(self) -> bool:
+        return self._export_include_selection_list_check.isChecked()
+
+    def get_export_include_raw_response(self) -> bool:
+        return self._export_include_raw_response_check.isChecked()
+
+    def get_export_include_document_metadata(self) -> bool:
+        return self._export_include_document_metadata_check.isChecked()
+
+    def get_export_include_usage_metrics(self) -> bool:
+        return self._export_include_usage_metrics_check.isChecked()
+
+    def get_export_include_yaml_frontmatter(self) -> bool:
+        return self._export_include_yaml_frontmatter_check.isChecked()
+
     # =========================================================================
     # ISettingsDialogView — Setters
     # =========================================================================
@@ -340,6 +400,29 @@ class SettingsDialog(QDialog):
 
     def set_cache_ttl_minutes(self, value: int) -> None:
         self._cache_ttl_spin.setValue(value)
+
+    # --- Phase 8: Export タブ Setters ---
+
+    def set_export_folder(self, value: str) -> None:
+        self._export_folder_edit.setText(value)
+
+    def set_export_include_explanation(self, value: bool) -> None:
+        self._export_include_explanation_check.setChecked(value)
+
+    def set_export_include_selection_list(self, value: bool) -> None:
+        self._export_include_selection_list_check.setChecked(value)
+
+    def set_export_include_raw_response(self, value: bool) -> None:
+        self._export_include_raw_response_check.setChecked(value)
+
+    def set_export_include_document_metadata(self, value: bool) -> None:
+        self._export_include_document_metadata_check.setChecked(value)
+
+    def set_export_include_usage_metrics(self, value: bool) -> None:
+        self._export_include_usage_metrics_check.setChecked(value)
+
+    def set_export_include_yaml_frontmatter(self, value: bool) -> None:
+        self._export_include_yaml_frontmatter_check.setChecked(value)
 
     def set_available_models_for_selection(
         self, models: list[tuple[str, str]]
@@ -418,6 +501,27 @@ class SettingsDialog(QDialog):
         self._cache_ttl_label.setText(texts.cache_ttl_label)
         self._cache_ttl_spin.setSuffix(texts.minutes_suffix)
         self._tabs.setTabText(2, texts.ai_tab_text)
+        self._export_folder_label.setText(texts.export_folder_label)
+        self._export_browse_button.setText(texts.export_browse_button_text)
+        self._export_include_explanation_check.setText(
+            texts.export_include_explanation_text
+        )
+        self._export_include_selection_list_check.setText(
+            texts.export_include_selection_list_text
+        )
+        self._export_include_raw_response_check.setText(
+            texts.export_include_raw_response_text
+        )
+        self._export_include_document_metadata_check.setText(
+            texts.export_include_document_metadata_text
+        )
+        self._export_include_usage_metrics_check.setText(
+            texts.export_include_usage_metrics_text
+        )
+        self._export_include_yaml_frontmatter_check.setText(
+            texts.export_include_yaml_frontmatter_text
+        )
+        self._tabs.setTabText(3, texts.export_tab_text)
         self._reset_button.setText(texts.reset_defaults_button_text)
         self._button_box.button(QDialogButtonBox.StandardButton.Ok).setText(
             texts.ok_button_text
@@ -439,6 +543,16 @@ class SettingsDialog(QDialog):
         """Fetch Models ボタンの押下を Presenter に委譲する。"""
         if self._on_fetch_models_requested:
             self._on_fetch_models_requested()
+
+    def _handle_browse_export_folder(self) -> None:
+        """Export Folder の参照ボタンでディレクトリピッカーを開く。"""
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            self._texts.export_folder_label if self._texts is not None else "",
+            self._export_folder_edit.text(),
+        )
+        if selected:
+            self._export_folder_edit.setText(selected)
 
     def _sync_default_model_combo(self) -> None:
         """モデルリストの内容を Default Model コンボに同期する。"""

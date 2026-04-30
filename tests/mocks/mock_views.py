@@ -425,6 +425,13 @@ class MockSettingsDialogView:
             "output_language": "日本語",
             "system_prompt_translation": "",
             "cache_ttl_minutes": 60,
+            "export_folder": "",
+            "export_include_explanation": True,
+            "export_include_selection_list": True,
+            "export_include_raw_response": False,
+            "export_include_document_metadata": False,
+            "export_include_usage_metrics": False,
+            "export_include_yaml_frontmatter": False,
         }
         # exec_dialog が返す固定値。True = OK、False = Cancel。
         self._exec_return: bool = True
@@ -509,6 +516,27 @@ class MockSettingsDialogView:
     def get_cache_ttl_minutes(self) -> int:
         return self._values["cache_ttl_minutes"]
 
+    def get_export_folder(self) -> str:
+        return self._values["export_folder"]
+
+    def get_export_include_explanation(self) -> bool:
+        return self._values["export_include_explanation"]
+
+    def get_export_include_selection_list(self) -> bool:
+        return self._values["export_include_selection_list"]
+
+    def get_export_include_raw_response(self) -> bool:
+        return self._values["export_include_raw_response"]
+
+    def get_export_include_document_metadata(self) -> bool:
+        return self._values["export_include_document_metadata"]
+
+    def get_export_include_usage_metrics(self) -> bool:
+        return self._values["export_include_usage_metrics"]
+
+    def get_export_include_yaml_frontmatter(self) -> bool:
+        return self._values["export_include_yaml_frontmatter"]
+
     # --- Phase 6: AI Models タブ Setters ---
 
     def set_gemini_model_name(self, value: str) -> None:
@@ -530,6 +558,34 @@ class MockSettingsDialogView:
     def set_cache_ttl_minutes(self, value: int) -> None:
         self.calls.append(("set_cache_ttl_minutes", (value,)))
         self._values["cache_ttl_minutes"] = value
+
+    def set_export_folder(self, value: str) -> None:
+        self.calls.append(("set_export_folder", (value,)))
+        self._values["export_folder"] = value
+
+    def set_export_include_explanation(self, value: bool) -> None:
+        self.calls.append(("set_export_include_explanation", (value,)))
+        self._values["export_include_explanation"] = value
+
+    def set_export_include_selection_list(self, value: bool) -> None:
+        self.calls.append(("set_export_include_selection_list", (value,)))
+        self._values["export_include_selection_list"] = value
+
+    def set_export_include_raw_response(self, value: bool) -> None:
+        self.calls.append(("set_export_include_raw_response", (value,)))
+        self._values["export_include_raw_response"] = value
+
+    def set_export_include_document_metadata(self, value: bool) -> None:
+        self.calls.append(("set_export_include_document_metadata", (value,)))
+        self._values["export_include_document_metadata"] = value
+
+    def set_export_include_usage_metrics(self, value: bool) -> None:
+        self.calls.append(("set_export_include_usage_metrics", (value,)))
+        self._values["export_include_usage_metrics"] = value
+
+    def set_export_include_yaml_frontmatter(self, value: bool) -> None:
+        self.calls.append(("set_export_include_yaml_frontmatter", (value,)))
+        self._values["export_include_yaml_frontmatter"] = value
 
     def set_available_models_for_selection(
         self, models: list[tuple[str, str]]

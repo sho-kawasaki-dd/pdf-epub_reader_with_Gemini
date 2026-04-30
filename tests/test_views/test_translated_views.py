@@ -38,9 +38,13 @@ class TestSettingsDialogTranslations:
         assert dialog._tabs.tabText(0) == "Rendering"
         assert dialog._tabs.tabText(1) == "Detection"
         assert dialog._tabs.tabText(2) == "AI Models"
+        assert dialog._tabs.tabText(3) == "Export"
         assert "Fetch Models" in _button_texts(dialog)
+        assert "Browse..." in _button_texts(dialog)
         assert "Reset to Defaults" in _button_texts(dialog)
         assert "High-quality downscale (Lanczos)" in _checkbox_texts(dialog)
+        assert "Include explanation" in _checkbox_texts(dialog)
+        assert "Include YAML frontmatter" in _checkbox_texts(dialog)
 
         dialog.set_fetch_models_loading(True)
 

@@ -270,6 +270,73 @@ class TestAISettingsPopulate:
         assert result.gemini_model_name == DEFAULT_GEMINI_MODEL
         assert result.output_language == DEFAULT_OUTPUT_LANGUAGE
 
+    def test_populate_sets_export_fields(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """show() で export 設定フィールドが View に populate されること。"""
+        config = AppConfig(
+            export_folder="C:/exports",
+            export_include_explanation=False,
+            export_include_selection_list=False,
+            export_include_raw_response=True,
+            export_include_document_metadata=True,
+            export_include_usage_metrics=True,
+            export_include_yaml_frontmatter=True,
+        )
+        mock_settings_view._exec_return = True
+
+        presenter = SettingsPresenter(mock_settings_view, config)
+        with patch(
+            "pdf_epub_reader.presenters.settings_presenter.save_config"
+        ):
+            presenter.show()
+
+        assert mock_settings_view.get_calls("set_export_folder")[0] == (
+            "C:/exports",
+        )
+        assert mock_settings_view.get_calls(
+            "set_export_include_explanation"
+        )[0] == (False,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_selection_list"
+        )[0] == (False,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_raw_response"
+        )[0] == (True,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_document_metadata"
+        )[0] == (True,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_usage_metrics"
+        )[0] == (True,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_yaml_frontmatter"
+        )[0] == (True,)
+
+    def test_read_config_includes_export_fields(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """View の export 設定が AppConfig に読み取られること。"""
+        config = AppConfig()
+        presenter = SettingsPresenter(mock_settings_view, config)
+        mock_settings_view._values["export_folder"] = "  C:/exports/markdown  "
+        mock_settings_view._values["export_include_explanation"] = False
+        mock_settings_view._values["export_include_selection_list"] = False
+        mock_settings_view._values["export_include_raw_response"] = True
+        mock_settings_view._values["export_include_document_metadata"] = True
+        mock_settings_view._values["export_include_usage_metrics"] = True
+        mock_settings_view._values["export_include_yaml_frontmatter"] = True
+
+        result = presenter._read_config_from_view()
+
+        assert result.export_folder == "C:/exports/markdown"
+        assert result.export_include_explanation is False
+        assert result.export_include_selection_list is False
+        assert result.export_include_raw_response is True
+        assert result.export_include_document_metadata is True
+        assert result.export_include_usage_metrics is True
+        assert result.export_include_yaml_frontmatter is True
+
     def test_reset_sets_ai_default_values(
         self, mock_settings_view: MockSettingsDialogView
     ) -> None:
@@ -293,6 +360,47 @@ class TestAISettingsPopulate:
         assert mock_settings_view.get_calls(
             "set_system_prompt_translation"
         )[-1] == (defaults.system_prompt_translation,)
+
+    def test_reset_sets_export_default_values(
+        self, mock_settings_view: MockSettingsDialogView
+    ) -> None:
+        """リセット時に export フィールドもデフォルト値になること。"""
+        config = AppConfig(
+            export_folder="C:/exports",
+            export_include_explanation=False,
+            export_include_selection_list=False,
+            export_include_raw_response=True,
+            export_include_document_metadata=True,
+            export_include_usage_metrics=True,
+            export_include_yaml_frontmatter=True,
+        )
+        presenter = SettingsPresenter(mock_settings_view, config)
+        mock_settings_view.calls.clear()
+
+        mock_settings_view.simulate_reset_defaults()
+
+        defaults = AppConfig()
+        assert mock_settings_view.get_calls("set_export_folder")[-1] == (
+            defaults.export_folder,
+        )
+        assert mock_settings_view.get_calls(
+            "set_export_include_explanation"
+        )[-1] == (defaults.export_include_explanation,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_selection_list"
+        )[-1] == (defaults.export_include_selection_list,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_raw_response"
+        )[-1] == (defaults.export_include_raw_response,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_document_metadata"
+        )[-1] == (defaults.export_include_document_metadata,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_usage_metrics"
+        )[-1] == (defaults.export_include_usage_metrics,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_yaml_frontmatter"
+        )[-1] == (defaults.export_include_yaml_frontmatter,)
 
 
 class TestFetchModels:

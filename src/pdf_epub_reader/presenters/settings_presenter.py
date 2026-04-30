@@ -93,6 +93,25 @@ class SettingsPresenter:
             config.system_prompt_translation
         )
         self._view.set_cache_ttl_minutes(config.cache_ttl_minutes)
+        self._view.set_export_folder(config.export_folder)
+        self._view.set_export_include_explanation(
+            config.export_include_explanation
+        )
+        self._view.set_export_include_selection_list(
+            config.export_include_selection_list
+        )
+        self._view.set_export_include_raw_response(
+            config.export_include_raw_response
+        )
+        self._view.set_export_include_document_metadata(
+            config.export_include_document_metadata
+        )
+        self._view.set_export_include_usage_metrics(
+            config.export_include_usage_metrics
+        )
+        self._view.set_export_include_yaml_frontmatter(
+            config.export_include_yaml_frontmatter
+        )
 
     def _read_config_from_view(self) -> AppConfig:
         """ダイアログの現在値から AppConfig を生成する。
@@ -114,6 +133,13 @@ class SettingsPresenter:
             output_language=self._view.get_output_language(),
             system_prompt_translation=self._view.get_system_prompt_translation(),
             cache_ttl_minutes=self._view.get_cache_ttl_minutes(),
+            export_folder=self._view.get_export_folder(),
+            export_include_explanation=self._view.get_export_include_explanation(),
+            export_include_selection_list=self._view.get_export_include_selection_list(),
+            export_include_raw_response=self._view.get_export_include_raw_response(),
+            export_include_document_metadata=self._view.get_export_include_document_metadata(),
+            export_include_usage_metrics=self._view.get_export_include_usage_metrics(),
+            export_include_yaml_frontmatter=self._view.get_export_include_yaml_frontmatter(),
             ui_language=self._config.ui_language,
             # ダイアログ対象外のフィールドは既存値を引き継ぐ
             window_width=self._config.window_width,
