@@ -4,8 +4,12 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
 
 ## TL;DR
 
-- 隔離レベル: subprocess + `-I -S` + 空 env + timeout、加えて **専用 venv** を `platformdirs.user_data_dir("gem-read")/sandbox-venv` に自動生成し allow-list パッケージのみインストール。
-- runner I/O プロトコル: **stdout に Plotly JSON のみ**。stderr は診断ログ。runner 自身が LLM 由来コードを `exec` し、最終 Figure を `fig.to_json()` で stdout に書く。
+- セキュリティ多層防御:
+  1. **AST 静的解析**(ホワイトリスト方式) — 第一線。許可外 import / 危険組み込み呼び出し / dunder 属性アクセスを `exec` 前に拒否。
+  2. **`__import__` 動的フック** — AST が捕り逃した遅延 import 等への第二の網。
+  3. **subprocess + `-I -S` + 空 env + timeout** — 万一の脱出時の爆発半径を限定。
+  - 専用 venv (`platformdirs.user_data_dir("gem-read")/sandbox-venv`) は **依存解決の手段**であり、隔離強度には数えない。allow-list パッケージのみインストール。
+- runner I/O プロトコル: **A 方式 (stdout 直採用)**。LLM コード自身が末尾で `print(fig.to_json())` を実行し、その stdout を JSON として parse する。runner は `globals()` 走査をしない。診断は stderr。
 - UI: サイドパネルの 📊 トグルを 3 状態に拡張（OFF / JSON / Python）。設定永続化は `plotly_visualization_mode: Literal["off","json","python"]`。
 - フォールバック: Python モード送信で応答に Python ブロックが無く JSON ブロックがあれば JSON 描画。
 - 進捗 UI: status bar に **スピナー + Cancel リンク**。Cancel で subprocess を terminate。
@@ -15,11 +19,15 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
 
 ### Phase 2-A: 基盤（venv プロビジョナ + runner script）
 
-1. **Allow-list 定数**: `src/pdf_epub_reader/services/plotly_sandbox/__init__.py` を新設し、以下の allow-list を集中管理する。
+1. **Allow-list 定数**: `src/pdf_epub_reader/services/plotly_sandbox/__init__.py` を新設し、以下の allow-list / deny-list を集中管理する。
    - 必須: `plotly`, `kaleido`
    - 数値: `numpy`, `pandas`, `scipy`, `sympy`
    - 標準（ホスト Python に既存。venv からも `--system-site-packages` ではなく標準ライブラリとして利用可）: `math`, `statistics`, `datetime`, `json`
-   - allow-list は `ALLOWED_THIRDPARTY_PACKAGES: tuple[str, ...]` と `ALLOWED_STDLIB_MODULES: frozenset[str]` の 2 系統で持つ。
+   - 定義する定数:
+     - `ALLOWED_THIRDPARTY_PACKAGES: tuple[str, ...]`
+     - `ALLOWED_STDLIB_MODULES: frozenset[str]`
+     - `DISALLOWED_BUILTIN_CALLS: frozenset[str] = frozenset({"eval", "exec", "compile", "__import__", "open", "input", "breakpoint"})` — AST `Call` 検査用。
+     - `DISALLOWED_DUNDER_ATTRS: frozenset[str] = frozenset({"__class__", "__bases__", "__subclasses__", "__mro__", "__globals__", "__builtins__", "__import__", "__loader__", "__code__"})` — AST `Attribute` 検査用(LLM コードのみに適用。ライブラリ内部は対象外)。
 2. **Sandbox venv プロビジョナ**: `src/pdf_epub_reader/services/plotly_sandbox/venv_provisioner.py` を新設。
    - 公開 API: `class SandboxVenvProvisioner` — `ensure(progress_cb: Callable[[str], None] | None = None) -> Path`（Python 実行可能ファイルのパスを返す）。
    - 配置: `platformdirs.user_data_dir("gem-read", "gem-read") / "sandbox-venv"`（OS 横断）。Windows は `Scripts/python.exe`、POSIX は `bin/python`。
@@ -29,13 +37,15 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
    - 失敗時は構造化例外 `SandboxProvisioningError` を投げる。pip 失敗時の stderr は logger.warning に出す。
 3. **Runner script**: `src/pdf_epub_reader/services/plotly_sandbox/runner.py` を新設（**標準ライブラリのみで完結**。venv の Python が `python -I -S runner.py` で起動できる形）。
    - argv: `runner.py --code-path <tmpfile>`（コードはホスト側で書き出して渡す）。
-   - 起動時に `sys.modules` をフックし、`__import__` をラップして allow-list 外の import を `ImportError("import 'X' is not allowed in sandbox")` で拒否する。stdlib は `ALLOWED_STDLIB_MODULES` に列挙したもののみ通す。
-   - LLM コード実行: `exec(compile(code, "<llm>", "exec"), sandbox_globals)`。
-   - 最終 Figure 抽出ルール: 実行後の `globals()` から
-     1. `fig` という名前の `plotly.graph_objects.Figure`
-     2. それが無ければ最初に見つかった `Figure` インスタンス
-   - `plotly.io.to_json(fig)` を **stdout** に書き、改行で締める。それ以外の print は **stderr** にリダイレクトする（`sys.stdout = sys.stderr` を `exec` 直前に差し替え、結果書き出し直前に元に戻す）。
-   - 例外時は `sys.exit(2)` し、tracebacks を stderr へ。
+   - **第一線: AST 静的解析**(ホワイトリスト方式)。`exec` 前に `ast.parse(code)` → `ast.walk` で以下を検査し、違反があれば全件収集して `sys.exit(3)` する。stderr に違反内容(node 種別 + 名前 + lineno)を JSON Lines 形式で出力。
+     - `ast.Import` / `ast.ImportFrom` の `module` / `names[i].name` のトップレベル名が `ALLOWED_THIRDPARTY_PACKAGES | ALLOWED_STDLIB_MODULES` に含まれること。
+     - `ast.Call` の `func` が `ast.Name` で、その `id` が `DISALLOWED_BUILTIN_CALLS` に含まれていないこと。
+     - `ast.Attribute` の `attr` が `DISALLOWED_DUNDER_ATTRS` に含まれていないこと(LLM コード本体のみ。import 後のライブラリ内部 AST は走査しない)。
+   - **第二線: `__import__` 動的フック**。AST 通過後、`exec` 直前に `builtins.__import__` をラップし、allow-list 外の import を `ImportError("import 'X' is not allowed in sandbox")` で拒否する。stdlib は `ALLOWED_STDLIB_MODULES` に列挙したもののみ通す。`sandbox_globals["__builtins__"]` には wrapped `__import__` を含むカスタム dict を設定し、再束縛で迂回されないようにする。
+   - **LLM コード実行(A 方式: stdout 直採用)**: `exec(compile(code, "<llm>", "exec"), sandbox_globals)` を実行する。stdout はそのまま素通しさせ、LLM コードが末尾で `print(fig.to_json())` を呼ぶことで Plotly JSON が runner の stdout に書かれる。runner 自身は実行後の `globals()` を走査しない / `plotly.io.to_json` を呼ばない。
+     - 副次出力(LLM が中間で `print` した文言など)が混入する可能性に備え、executor 側で stdout 全文から **最後の有効 JSON 行**を抽出するフォールバックを `SandboxExecutor` 側に置く(Step 4)。runner はあくまで素通し。
+     - stderr 用途の print が必要な場合に備え、runner 起動時に `sys.stderr` を差し替えはしない(LLM コードが書き込めるのは stdout のみ。トレースバックは Python が自動で stderr へ出す)。
+   - 例外時は `sys.exit(2)` し、tracebacks を stderr へ。AST 違反専用に `sys.exit(3)`(違反詳細 stderr) を分ける。
 
 ### Phase 2-B: 実行 service とプロセス管理
 
@@ -43,13 +53,16 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
    - `class SandboxExecutor` — DI で `SandboxVenvProvisioner` を受け取る。
    - `run(code: str, *, timeout_s: float, cancel_token: CancelToken) -> str`（Plotly JSON 文字列を返す）。
    - フロー: ensure venv → `tempfile.NamedTemporaryFile` にコード書き出し → `subprocess.Popen([python, "-I", "-S", runner_path, "--code-path", tmp])` を `env={}`、`cwd=<tempdir>`、`stdin=DEVNULL`、`stdout=PIPE`、`stderr=PIPE` で起動。
+   - **stdout パース** (A 方式の補助): `proc.stdout` 全文を取得後、行単位で末尾から走査して最初に `json.loads` が成功する行を採用する。LLM が中間 print を混ぜても末尾の `print(fig.to_json())` 出力を拾える。全行が parse 失敗なら `SandboxOutputError`。
+   - **exit code 解釈**: `0` → 正常、`2` → `SandboxRuntimeError`、`3` → stderr の JSON Lines を読んで `SandboxStaticCheckError(disallowed=[...])`、その他 → `SandboxRuntimeError`。
    - timeout 管理: `proc.wait(timeout=timeout_s)`。timeout 時は `proc.terminate()` → 1 秒後に `kill()`。
    - cancel: `CancelToken.cancelled` を別スレッドで監視し、true になったら terminate。
    - 失敗時の構造化例外:
      - `SandboxTimeoutError`
      - `SandboxCancelledError`
-     - `SandboxRuntimeError(stderr_summary, stderr_log_path)` — stderr 全文をログファイルに保存し summary のみを保持
-     - `SandboxOutputError`（stdout が JSON として parse できない）
+     - `SandboxStaticCheckError(disallowed: list[str], stderr_log_path)` — runner の `sys.exit(3)`(AST 違反) を判別。違反名一覧を保持し、status bar に「使用不可: `os`, `subprocess`」のように具体的に出すための情報源とする。
+     - `SandboxRuntimeError(stderr_summary, stderr_log_path)` — `sys.exit(2)` 含むその他実行時エラー。stderr 全文をログファイルに保存し summary のみを保持。
+     - `SandboxOutputError`（stdout が JSON として parse できない。stdout 末尾の有効 JSON 行抽出にも失敗した場合）
 5. **CancelToken**: `src/pdf_epub_reader/services/plotly_sandbox/cancel.py` を新設。`threading.Event` ラッパで OK。
 
 ### Phase 2-C: DTO / 設定 / プロンプト
@@ -63,13 +76,20 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
    - 追加: `plotly_sandbox_log_dir`(None 時は `platformdirs.user_log_dir("gem-read")` を使用)。
 8. **i18n**: `dto/ui_text_dto.py` / `resources/i18n.py` / `services/translation_service.py`。
    - `SidePanelTexts.plotly_toggle_tooltip_off / _json / _python`(3 状態それぞれ)。
-   - status bar 文言: `plotly_sandbox_running`, `plotly_sandbox_timeout`, `plotly_sandbox_runtime_error`, `plotly_sandbox_cancelled`, `plotly_sandbox_provisioning`, `plotly_sandbox_provisioning_failed`, `plotly_sandbox_fallback_to_json`。
+   - status bar 文言: `plotly_sandbox_running`, `plotly_sandbox_timeout`, `plotly_sandbox_runtime_error`, `plotly_sandbox_static_check_error`(違反名一覧をプレースホルダ `{names}` で受ける), `plotly_sandbox_cancelled`, `plotly_sandbox_provisioning`, `plotly_sandbox_provisioning_failed`, `plotly_sandbox_provisioning_failed_offline`, `plotly_sandbox_fallback_to_json`。
    - Settings ダイアログ用: `plotly_timeout_label`, `plotly_timeout_suffix_seconds`。
    - Cancel リンク: `plotly_sandbox_cancel_link`。
 9. **AIModel プロンプト注入**: `src/pdf_epub_reader/models/ai_model.py` の `_build_contents()` を拡張。
    - `request.request_plotly_mode == "json"` のとき: Phase 1 の英語定型文(JSON のみ要求)を追記。
-   - `request.request_plotly_mode == "python"` のとき: 以下の英語定型文を `contents` ヘッダー末尾(`<selection>` 直前)に追記する。
-     > `If the response contains data or formulas that can be visualized, output a self-contained Python script in a` ` ```python ` `fenced code block that builds a Plotly figure named` `fig` `and writes` `plotly.io.to_json(fig)` `to standard output. The script must NOT perform any network access or file I/O. Allowed imports are limited to: plotly, numpy, pandas, scipy, sympy, math, statistics, datetime, json.`
+   - `request.request_plotly_mode == "python"` のとき: 以下の英語定型文(肯定形・A 方式準拠)を `contents` ヘッダー末尾(`<selection>` 直前)に追記する。
+     > ````
+     > When visualizing data, provide a self-contained Python script in a ```python``` fenced code block. The script MUST strictly adhere to these rules:
+     > 1. Allowed imports: only plotly, numpy, pandas, scipy, sympy, math, statistics, datetime, json.
+     > 2. Define a Plotly figure object and assign it to a variable named exactly 'fig'.
+     > 3. The script MUST end by writing the JSON representation of the figure to standard output exactly like this: print(fig.to_json())
+     > 4. Generate synthetic data or embed data directly in the script. Do not reference local files, network resources, or any modules outside the allowed list.
+     > ````
+     - 注: runner は **A 方式 (stdout 直採用)** であり、stdout 末尾の `print(fig.to_json())` 出力を JSON として採用する。`fig` 変数の存在は AST 検査では強制せず、プロンプト要件としてのみ提示する(`fig` を持たないが `print(go.Figure(...).to_json())` だけ書く応答も許容される)。
    - `"off"` 時は従来通り注入なし。`system_instruction` は引き続き不変(キャッシュ無効化なし)。
 
 ### Phase 2-D: 抽出 / 描画 / フォールバック
@@ -98,9 +118,10 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
       - 例外マッピング:
         - `SandboxTimeoutError` → status bar `plotly_sandbox_timeout`、AI 結果は維持
         - `SandboxCancelledError` → status bar `plotly_sandbox_cancelled`
+        - `SandboxStaticCheckError` → status bar `plotly_sandbox_static_check_error.format(names=", ".join(disallowed))`、ログパスを tooltip に
         - `SandboxRuntimeError` → status bar `plotly_sandbox_runtime_error`、ログパスを tooltip に
         - `SandboxOutputError` → 同上、`plotly_sandbox_runtime_error` を流用
-        - `SandboxProvisioningError` → status bar `plotly_sandbox_provisioning_failed`
+        - `SandboxProvisioningError` → status bar `plotly_sandbox_provisioning_failed`(ネット未接続が疑われる場合は `plotly_sandbox_provisioning_failed_offline`)
       - 複数 spec は Phase 1 と同じ `plotly_multi_spec_mode` を流用(prompt / first_only)。
 14. **MainWindow status-bar スピナー**: `views/main_window.py` / `interfaces/view_interfaces.py`。
     - `IMainWindow.show_plotly_running(cancel_cb: Callable[[], None]) -> None` と `clear_plotly_running()` を追加。
@@ -128,10 +149,15 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
 
 17. **新規・更新するテスト**:
     - `tests/test_services/test_plotly_sandbox_executor.py`(新規): 実 subprocess を使う統合テスト。
-      - 正常系: `fig = plotly.graph_objects.Figure(); fig.add_scatter(...)` のスクリプトで JSON を返す。
+      - 正常系 (A 方式): `import plotly.graph_objects as go; fig = go.Figure(); fig.add_scatter(x=[1,2,3], y=[1,4,9]); print(fig.to_json())` のスクリプトで stdout 末尾を採用して JSON を返す。
+      - 中間 print 混入: `print("hello"); ...; print(fig.to_json())` でも stdout 末尾抽出が成功すること。
       - timeout: `while True: pass` を 1.0s で打ち切る。
       - cancel: 別スレッドで `cancel_token.set()` を 0.3s 後に発火。
-      - import 拒否: `import os` で `SandboxRuntimeError`。
+      - **AST 違反 (import)**: `import os` で `SandboxStaticCheckError(disallowed=["os"])`。プロセス exit code は `3`。
+      - **AST 違反 (危険組み込み)**: `eval("1+1")` で `SandboxStaticCheckError(disallowed=["eval"])`。
+      - **AST 違反 (dunder 属性)**: `().__class__.__base__.__subclasses__()` で `SandboxStaticCheckError(disallowed=["__class__", ...])`。
+      - **AST 違反複数同時**: `import os` と `eval(...)` を同居させた場合、両方が `disallowed` に含まれること。
+      - **動的フックの第二線確認**: AST を擬似的に bypass(runner を直接呼ぶテスト用フック等)させ、`importlib.import_module("os")` が `__import__` フックで `SandboxRuntimeError` になること。
       - 出力不正: stdout に非 JSON を吐くスクリプトで `SandboxOutputError`。
       - venv プロビジョニング失敗のシミュレーションは provisioner を monkeypatch して `SandboxProvisioningError` を流す。
       - **CI 軽量化のため `@pytest.mark.slow`** を付け、デフォルトは省略可能に。
@@ -142,7 +168,8 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
     - `tests/test_presenters/test_main_presenter.py`(更新): provisioning 中の status bar 表示、cancel ハンドラ呼び出しで executor が cancel_token.set すること、各例外の status bar 文言マッピング、複数 spec モード合流、設定保存。
     - `tests/test_presenters/test_settings_presenter.py`(更新): timeout 往復、clamp。
     - `tests/test_views/test_side_panel_view.py`(更新 or 新規): 3 状態循環、右クリックメニュー選択、`set_plotly_mode` での外部反映。
-    - `tests/test_models/test_ai_model.py`(更新): `request_plotly_mode == "python"` 時のプロンプト追記文字列スナップショット、`"off"` 時は無追記、`system_instruction` 不変。
+    - `tests/test_models/test_ai_model.py`(更新): `request_plotly_mode == "python"` 時のプロンプト追記文字列スナップショット(A 方式の `print(fig.to_json())` 文言を含むこと)、`"off"` 時は無追記、`system_instruction` 不変。
+    - `tests/test_services/test_plotly_sandbox_runner.py`(新規, optional): runner の AST チェック関数を **直接 import** して unit テスト。`@pytest.mark.slow` を付けない軽量テスト。許可・違反パターンを網羅。
     - `tests/mocks/mock_views.py`(更新): 3 状態 API、status bar スピナー、settings 拡張。
 
 ## Relevant Files
@@ -191,7 +218,9 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
    - 2 回目以降の Python モード送信 → provisioning が走らず即時実行
    - timeout: わざと無限ループの応答(手動で stub)→ 10s で打ち切り、status bar 通知、AI 結果保持
    - Cancel: status bar の cancel リンクをクリック → 即停止、結果ウィンドウ非表示
-   - 禁止 import (`import os`) を含む応答 → runtime error 通知、ログパス tooltip
+   - 禁止 import (`import os`) を含む応答 → AST 静的解析で拒否され `plotly_sandbox_static_check_error` が違反名 `os` 入りで status bar に表示、ログパス tooltip
+   - 危険組み込み (`eval(...)`) を含む応答 → 同上、違反名 `eval` が表示
+   - 動的 import (`importlib.import_module("os")`) を含む応答 → AST は通過するが `__import__` フックで拒否され `plotly_sandbox_runtime_error`
    - Python モードで Python ブロックが無く JSON ブロックがある応答 → JSON にフォールバック描画 + 通知
    - JSON モード(既存挙動)と OFF モードに退行が無いこと
    - Settings の timeout を 5s に変更 → 反映
@@ -201,21 +230,23 @@ LLM が返す Python コード（Plotly Figure 生成）を、ホストとは隔
 
 ## Decisions(確定)
 
-| 論点                      | 決定                                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| 隔離レベル                | subprocess + `-I -S` + 空 env + timeout + **専用 venv(allow-list のみ)**                          |
-| Allow-list                | plotly, kaleido, numpy, pandas, scipy, sympy, math, statistics, datetime, json                    |
-| インタープリタ            | `~/.gem-read/sandbox-venv`(platformdirs ベース)の専用 venv                                        |
-| モード切替 UI             | サイドパネルの 📊 を **3 状態トグル**(OFF / JSON / Python)に拡張                                  |
-| プロンプト注入(Python)    | 「JSON 出力を含む Python スクリプトのみ」「ネット・ファイル I/O 禁止」「allow-list 列挙」を英語で |
-| runner I/O プロトコル     | stdout = Plotly JSON のみ、stderr = 診断ログ                                                      |
-| timeout デフォルト        | 10 秒(設定で 1–120 秒に変更可)                                                                    |
-| Python ブロック欠落時     | JSON ブロックがあれば JSON にフォールバック、無ければ静かにスキップ                               |
-| 複数 spec                 | Phase 1 の `plotly_multi_spec_mode`(prompt/first_only)を流用                                      |
-| Cancel UI                 | status bar にスピナー + Cancel リンク。クリックで terminate                                       |
-| stderr 露出               | status bar には要約のみ。全文は `platformdirs.user_log_dir/gem-read/plotly-sandbox-*.log` に保存  |
-| Phase 1 設定との互換      | 旧 `plotly_visualization_enabled` を `plotly_visualization_mode` に自動移行                       |
-| `system_instruction` 改変 | 行わない(キャッシュ温存)                                                                          |
+| 論点                      | 決定                                                                                                                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| セキュリティ多層防御      | (1) AST 静的解析(ホワイトリスト) + (2) `__import__` 動的フック + (3) subprocess `-I -S` + 空 env + timeout                                                                                                                           |
+| venv の位置づけ           | **依存解決の手段**であり隔離強度には数えない。allow-list パッケージ提供のための専用 venv                                                                                                                                             |
+| Allow-list                | plotly, kaleido, numpy, pandas, scipy, sympy, math, statistics, datetime, json                                                                                                                                                       |
+| Deny-list (AST)           | 組み込み呼び出し: `eval`, `exec`, `compile`, `__import__`, `open`, `input`, `breakpoint` / dunder 属性: `__class__`, `__bases__`, `__subclasses__`, `__mro__`, `__globals__`, `__builtins__`, `__import__`, `__loader__`, `__code__` |
+| インタープリタ            | `~/.gem-read/sandbox-venv`(platformdirs ベース)の専用 venv                                                                                                                                                                           |
+| モード切替 UI             | サイドパネルの 📊 を **3 状態トグル**(OFF / JSON / Python)に拡張                                                                                                                                                                     |
+| プロンプト注入(Python)    | 肯定形・A 方式準拠。「allow-list 列挙」「`fig` 変数」「末尾で `print(fig.to_json())`」「合成データ or 埋め込み利用」を英語で明示                                                                                                     |
+| runner I/O プロトコル     | **A 方式 (stdout 直採用)**。LLM コードが `print(fig.to_json())` で書いた stdout を末尾から JSON 抽出。runner は `globals()` を走査しない                                                                                             |
+| timeout デフォルト        | 10 秒(設定で 1–120 秒に変更可)                                                                                                                                                                                                       |
+| Python ブロック欠落時     | JSON ブロックがあれば JSON にフォールバック、無ければ静かにスキップ                                                                                                                                                                  |
+| 複数 spec                 | Phase 1 の `plotly_multi_spec_mode`(prompt/first_only)を流用                                                                                                                                                                         |
+| Cancel UI                 | status bar にスピナー + Cancel リンク。クリックで terminate                                                                                                                                                                          |
+| stderr 露出               | status bar には要約のみ。全文は `platformdirs.user_log_dir/gem-read/plotly-sandbox-*.log` に保存                                                                                                                                     |
+| Phase 1 設定との互換      | 旧 `plotly_visualization_enabled` を `plotly_visualization_mode` に自動移行                                                                                                                                                          |
+| `system_instruction` 改変 | 行わない(キャッシュ温存)                                                                                                                                                                                                             |
 
 ## Further Considerations
 
