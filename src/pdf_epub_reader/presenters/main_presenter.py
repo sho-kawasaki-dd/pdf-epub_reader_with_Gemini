@@ -14,6 +14,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 from pdf_epub_reader.dto import (
     PageData,
@@ -33,8 +34,17 @@ from pdf_epub_reader.presenters.cache_presenter import CachePresenter
 from pdf_epub_reader.presenters.language_presenter import LanguagePresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
 from pdf_epub_reader.presenters.settings_presenter import SettingsPresenter
+from pdf_epub_reader.services.markdown_export_service import (
+    MarkdownExportPayload,
+    build_markdown_export_document,
+    build_markdown_export_filename,
+)
 from pdf_epub_reader.services.translation_service import TranslationService
-from pdf_epub_reader.utils.config import AppConfig, save_config
+from pdf_epub_reader.utils.config import (
+    AppConfig,
+    normalize_export_folder,
+    save_config,
+)
 from pdf_epub_reader.utils.exceptions import (
     AICacheError,
     AIKeyMissingError,
@@ -130,6 +140,9 @@ class MainPresenter:
         )
         self._panel_presenter.set_on_clear_selections_handler(
             self._on_selection_clear_requested
+        )
+        self._panel_presenter.set_on_export_requested_handler(
+            self._on_export_requested
         )
 
         # Phase 7: キャッシュ操作のコールバックを登録
@@ -578,6 +591,63 @@ class MainPresenter:
     def _on_cache_create(self) -> None:
         """キャッシュ作成ボタンからの非同期操作を開始する。"""
         asyncio.ensure_future(self._do_cache_create())
+
+    def _on_export_requested(self) -> None:
+        """サイドパネルからの Markdown export 要求を開始する。"""
+        asyncio.ensure_future(self._do_export_markdown())
+
+    async def _do_export_markdown(self) -> None:
+        """アクティブな AI 結果を Markdown に保存する。"""
+        export_state = self._panel_presenter.export_state
+        if export_state is None:
+            return
+
+        export_texts = self._translation_service.build_markdown_export_texts(
+            self._config.ui_language
+        )
+        export_folder = normalize_export_folder(self._config.export_folder)
+        if not export_folder:
+            self._view.show_status_message(export_texts.folder_unset_message)
+            return
+
+        doc_info = await self._document_model.get_document_info()
+        if doc_info is None:
+            self._view.show_status_message(
+                export_texts.failure_message_template.format(
+                    details=self._translate("main.status.cache.no_document")
+                )
+            )
+            return
+
+        try:
+            export_dir = Path(export_folder)
+            export_dir.mkdir(parents=True, exist_ok=True)
+
+            markdown = build_markdown_export_document(
+                MarkdownExportPayload(
+                    result=export_state.result,
+                    document_info=doc_info,
+                    selection_snapshot=export_state.selection_snapshot,
+                    action_mode=export_state.action_mode,
+                    model_name=export_state.model_name,
+                ),
+                self._config,
+                export_texts,
+            )
+            file_path = export_dir / build_markdown_export_filename(doc_info)
+            file_path.write_text(markdown, encoding="utf-8")
+        except Exception as exc:
+            self._view.show_status_message(
+                export_texts.failure_message_template.format(details=str(exc))
+            )
+            logger.warning("Markdown export failed", exc_info=True)
+            return
+
+        self._view.show_status_message(
+            export_texts.success_message_template.format(
+                file_path=str(file_path)
+            )
+        )
 
     async def _do_cache_create(self) -> None:
         """ドキュメント全文をキャッシュする。"""

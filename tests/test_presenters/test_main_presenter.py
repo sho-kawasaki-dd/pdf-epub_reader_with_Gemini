@@ -7,6 +7,7 @@ MainPresenter が View と Model の間を正しい順序で仲介できてい�
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -20,10 +21,14 @@ from tests.mocks.mock_views import (
 )
 
 from pdf_epub_reader.dto import (
+    AnalysisMode,
+    AnalysisResult,
     CacheStatus,
     ModelInfo,
     RectCoords,
     SelectionContent,
+    SelectionSlot,
+    SelectionSnapshot,
     ToCEntry,
 )
 from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
@@ -34,6 +39,21 @@ from pdf_epub_reader.utils.config import AppConfig
 
 
 from pdf_epub_reader.utils.exceptions import AIKeyMissingError
+
+
+def _make_export_snapshot(text: str) -> SelectionSnapshot:
+    return SelectionSnapshot(
+        slots=(
+            SelectionSlot(
+                selection_id="selection-1",
+                display_number=1,
+                page_number=0,
+                rect=RectCoords(0.0, 0.0, 10.0, 10.0),
+                read_state="ready",
+                extracted_text=text,
+            ),
+        )
+    )
 
 
 class TestProtocolConformance:
@@ -1594,3 +1614,127 @@ class TestShutdownCallsInvalidate:
 async def _async_return(value):
     """簡易 async 値返却ヘルパー。"""
     return value
+
+
+class TestMarkdownExportFlow:
+    @pytest.mark.asyncio
+    async def test_export_requested_saves_markdown_to_configured_folder(
+        self,
+        tmp_path: Path,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        panel.set_available_models(["models/gemini-2.0-flash"])
+        panel.set_selected_model("models/gemini-2.0-flash")
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(export_folder=str(tmp_path), ui_language="en"),
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+        panel.set_selection_snapshot(_make_export_snapshot("Selected source"))
+        panel._store_export_state(
+            action_mode=AnalysisMode.TRANSLATION,
+            result=AnalysisResult(
+                translated_text="Saved translation",
+                raw_response="Raw translation",
+            ),
+            include_explanation=False,
+        )
+
+        await presenter._do_export_markdown()
+
+        exported_files = list(tmp_path.glob("*.md"))
+        assert len(exported_files) == 1
+        exported_text = exported_files[0].read_text(encoding="utf-8")
+        assert "# Mock Document" in exported_text
+        assert "Saved translation" in exported_text
+        assert "Selected source" in exported_text
+
+        status_message = mock_main_view.get_calls("show_status_message")[-1][0]
+        assert "Exported Markdown to" in status_message
+        assert str(exported_files[0]) in status_message
+
+    @pytest.mark.asyncio
+    async def test_export_requested_with_unset_folder_shows_status_only(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        panel.set_available_models(["models/gemini-2.0-flash"])
+        panel.set_selected_model("models/gemini-2.0-flash")
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(export_folder="", ui_language="en"),
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+        panel.set_selection_snapshot(_make_export_snapshot("Selected source"))
+        panel._store_export_state(
+            action_mode=AnalysisMode.TRANSLATION,
+            result=AnalysisResult(
+                translated_text="Saved translation",
+                raw_response="Raw translation",
+            ),
+            include_explanation=False,
+        )
+
+        await presenter._do_export_markdown()
+
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "Export folder is not configured.",
+        )
+
+    @pytest.mark.asyncio
+    async def test_export_requested_reports_write_failures(
+        self,
+        tmp_path: Path,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        blocked_path = tmp_path / "blocked"
+        blocked_path.write_text("not a directory", encoding="utf-8")
+
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        panel.set_available_models(["models/gemini-2.0-flash"])
+        panel.set_selected_model("models/gemini-2.0-flash")
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(export_folder=str(blocked_path), ui_language="en"),
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+        panel.set_selection_snapshot(_make_export_snapshot("Selected source"))
+        panel._store_export_state(
+            action_mode=AnalysisMode.TRANSLATION,
+            result=AnalysisResult(
+                translated_text="Saved translation",
+                raw_response="Raw translation",
+            ),
+            include_explanation=False,
+        )
+
+        await presenter._do_export_markdown()
+
+        status_message = mock_main_view.get_calls("show_status_message")[-1][0]
+        assert "Failed to export Markdown:" in status_message
