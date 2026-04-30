@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
@@ -21,8 +19,6 @@ from pdf_epub_reader.dto import (
     PageData,
     PlotlySpec,
     RectCoords,
-    SelectionContent,
-    SelectionSlot,
     SelectionSnapshot,
 )
 from pdf_epub_reader.interfaces.model_interfaces import IAIModel, IDocumentModel
@@ -35,6 +31,7 @@ from pdf_epub_reader.interfaces.view_interfaces import (
 from pdf_epub_reader.presenters.cache_presenter import CachePresenter
 from pdf_epub_reader.presenters.language_presenter import LanguagePresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
+from pdf_epub_reader.presenters.selection_coordinator import SelectionCoordinator
 from pdf_epub_reader.presenters.settings_presenter import SettingsPresenter
 from pdf_epub_reader.services.markdown_export_service import (
     MarkdownExportPayload,
@@ -116,10 +113,11 @@ class MainPresenter:
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
         self._zoom_level: float = 1.0
-        self._selection_slots: OrderedDict[str, SelectionSlot] = OrderedDict()
-        self._selection_generation: int = 0
-        self._next_selection_id: int = 1
-        self._selection_warning_threshold = 10
+        self._selection = SelectionCoordinator(
+            on_snapshot_changed=self._on_selection_snapshot_changed,
+            on_threshold_crossed=self._on_selection_threshold_crossed,
+            warning_threshold=10,
+        )
         self._plot_windows: list[_PlotWindowLike] = []
 
         # View は Presenter を知らないため、ここでイベントの受け口を登録する。
@@ -311,18 +309,13 @@ class MainPresenter:
 
     def _on_selection_delete_requested(self, selection_id: str) -> None:
         """個別選択の削除要求を処理する。"""
-        if selection_id not in self._selection_slots:
-            return
-
-        del self._selection_slots[selection_id]
-        self._renumber_selection_slots()
-        self._sync_selection_views()
+        self._selection.delete_slot(selection_id)
 
     def _schedule_selection(
         self, page_number: int, rect: RectCoords, *, append: bool
     ) -> None:
         """選択スロットを先に確保し、抽出だけを非同期で進める。"""
-        selection_id, generation = self._reserve_selection_slot(
+        selection_id, generation = self._selection.reserve_slot(
             page_number, rect, append=append
         )
         asyncio.ensure_future(
@@ -331,44 +324,11 @@ class MainPresenter:
             )
         )
 
-    def _reserve_selection_slot(
-        self, page_number: int, rect: RectCoords, *, append: bool
-    ) -> tuple[str, int]:
-        """選択スロットを確保し、View と SidePanel に即時反映する。"""
-        previous_count = len(self._selection_slots)
-        if not append:
-            self._selection_generation += 1
-            self._selection_slots.clear()
-
-        selection_id = f"selection-{self._next_selection_id}"
-        self._next_selection_id += 1
-
-        self._selection_slots[selection_id] = SelectionSlot(
-            selection_id=selection_id,
-            display_number=len(self._selection_slots) + 1,
-            page_number=page_number,
-            rect=rect,
-            read_state="pending",
-        )
-        self._renumber_selection_slots()
-        self._sync_selection_views()
-
-        current_count = len(self._selection_slots)
-        if (
-            previous_count <= self._selection_warning_threshold
-            and current_count > self._selection_warning_threshold
-        ):
-            self._view.show_status_message(
-                self._translate("side.selection.warning")
-            )
-
-        return selection_id, self._selection_generation
-
     async def _do_area_selected(
         self, page_number: int, rect: RectCoords
     ) -> None:
         """テスト互換のため、単一選択を直接完了させるヘルパーを残す。"""
-        selection_id, generation = self._reserve_selection_slot(
+        selection_id, generation = self._selection.reserve_slot(
             page_number, rect, append=False
         )
         await self._extract_selection_content(
@@ -393,21 +353,16 @@ class MainPresenter:
                 auto_detect_math_fonts=self._config.auto_detect_math_fonts,
             )
         except Exception as exc:
-            self._mark_selection_error(selection_id, generation, str(exc))
+            if self._selection.mark_error(selection_id, generation, str(exc)):
+                self._view.show_status_message(
+                    self._translate("main.status.selection.read_failed")
+                )
             return
 
-        if not self._selection_result_is_current(selection_id, generation):
+        if not self._selection.apply_extracted_content(
+            selection_id, generation, content
+        ):
             return
-
-        self._selection_slots[selection_id] = replace(
-            self._selection_slots[selection_id],
-            read_state="ready",
-            extracted_text=content.extracted_text,
-            has_thumbnail=content.cropped_image is not None,
-            content=content,
-            error_message=None,
-        )
-        self._sync_selection_views()
 
         if content.cropped_image and content.detection_reason:
             reason_label = self._translate(
@@ -420,63 +375,22 @@ class MainPresenter:
                 )
             )
 
-    def _mark_selection_error(
-        self, selection_id: str, generation: int, message: str
-    ) -> None:
-        """抽出失敗時にスロットをエラー状態へ更新する。"""
-        if not self._selection_result_is_current(selection_id, generation):
-            return
-
-        self._selection_slots[selection_id] = replace(
-            self._selection_slots[selection_id],
-            read_state="error",
-            extracted_text="",
-            has_thumbnail=False,
-            content=None,
-            error_message=message,
-        )
-        self._sync_selection_views()
-        self._view.show_status_message(
-            self._translate("main.status.selection.read_failed")
-        )
-
-    def _selection_result_is_current(
-        self, selection_id: str, generation: int
-    ) -> bool:
-        """遅延結果が現行の選択世代に属するかを判定する。"""
-        return (
-            generation == self._selection_generation
-            and selection_id in self._selection_slots
-        )
-
     def _clear_selection_state(self, *, increment_generation: bool) -> None:
         """現在の選択状態を消去し、関連 View を同期する。"""
-        if increment_generation:
-            self._selection_generation += 1
-        self._selection_slots.clear()
-        self._sync_selection_views()
+        self._selection.clear(increment_generation=increment_generation)
 
-    def _renumber_selection_slots(self) -> None:
-        """表示番号を現在の順序に沿って 1 始まりで振り直す。"""
-        self._selection_slots = OrderedDict(
-            (
-                selection_id,
-                replace(slot, display_number=index),
-            )
-            for index, (selection_id, slot) in enumerate(
-                self._selection_slots.items(), start=1
-            )
-        )
-
-    def _build_selection_snapshot(self) -> SelectionSnapshot:
-        """内部の順序付き状態からスナップショット DTO を構築する。"""
-        return SelectionSnapshot(slots=tuple(self._selection_slots.values()))
-
-    def _sync_selection_views(self) -> None:
-        """MainView と SidePanel に現在の選択スナップショットを反映する。"""
-        snapshot = self._build_selection_snapshot()
+    def _on_selection_snapshot_changed(
+        self, snapshot: SelectionSnapshot
+    ) -> None:
+        """SelectionCoordinator からの状態変化通知を View / Panel に伝搬する。"""
         self._view.show_selection_highlights(snapshot)
         self._panel_presenter.set_selection_snapshot(snapshot)
+
+    def _on_selection_threshold_crossed(self) -> None:
+        """選択数が警告閾値を超えた瞬間にステータスメッセージを表示する。"""
+        self._view.show_status_message(
+            self._translate("side.selection.warning")
+        )
 
     def _on_zoom_changed(self, level: float) -> None:
         """ズーム変更イベントを受け取り、再描画処理を非同期で開始する。"""
