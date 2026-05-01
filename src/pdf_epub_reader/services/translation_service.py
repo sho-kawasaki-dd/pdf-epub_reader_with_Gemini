@@ -6,6 +6,7 @@ import logging
 from collections.abc import Mapping
 
 from pdf_epub_reader.dto import (
+    AnalysisStatusTexts,
     BookmarkPanelTexts,
     CacheDialogTexts,
     LanguageDialogTexts,
@@ -95,6 +96,15 @@ class TranslationService:
             password_dialog_title=self.translate("main.dialog.password.title", language),
             password_dialog_message_template=self.translate("main.dialog.password.message", language),
             bookmark_panel=self.build_bookmark_panel_texts(language),
+        )
+
+    def build_analysis_status_texts(self, language: str) -> AnalysisStatusTexts:
+        return AnalysisStatusTexts(
+            running_message=self.translate("ai.running_message", language),
+            cancelled_message=self.translate("ai.cancelled_message", language),
+            timing_only=self.translate("ai.timing_only", language),
+            timing_with_graph=self.translate("ai.timing_with_graph", language),
+            cancel_link_text=self.translate("ai.cancel_link_text", language),
         )
 
     def build_side_panel_texts(self, language: str) -> SidePanelTexts:

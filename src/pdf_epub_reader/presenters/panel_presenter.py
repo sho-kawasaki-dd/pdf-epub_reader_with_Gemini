@@ -491,12 +491,16 @@ class PanelPresenter:
                 self._view.update_result_text(
                     self._translate("presenter.panel.api_key_missing")
                 )
+                if self._on_ai_request_failed_handler is not None:
+                    self._on_ai_request_failed_handler()
             except AIRateLimitError:
                 self._reset_plotly_specs()
                 self._invalidate_export_state(AnalysisMode.TRANSLATION)
                 self._view.update_result_text(
                     self._translate("presenter.panel.rate_limit")
                 )
+                if self._on_ai_request_failed_handler is not None:
+                    self._on_ai_request_failed_handler()
             except AIAPIError as exc:
                 self._reset_plotly_specs()
                 self._invalidate_export_state(AnalysisMode.TRANSLATION)
@@ -506,6 +510,8 @@ class PanelPresenter:
                         message=exc.message,
                     )
                 )
+                if self._on_ai_request_failed_handler is not None:
+                    self._on_ai_request_failed_handler()
             except asyncio.CancelledError:
                 if self._active_analysis_task is asyncio.current_task():
                     if self._on_ai_request_cancelled_handler is not None:
@@ -577,12 +583,16 @@ class PanelPresenter:
                 self._view.update_result_text(
                     self._translate("presenter.panel.api_key_missing")
                 )
+                if self._on_ai_request_failed_handler is not None:
+                    self._on_ai_request_failed_handler()
             except AIRateLimitError:
                 self._reset_plotly_specs()
                 self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
                 self._view.update_result_text(
                     self._translate("presenter.panel.rate_limit")
                 )
+                if self._on_ai_request_failed_handler is not None:
+                    self._on_ai_request_failed_handler()
             except AIAPIError as exc:
                 self._reset_plotly_specs()
                 self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
@@ -592,6 +602,8 @@ class PanelPresenter:
                         message=exc.message,
                     )
                 )
+                if self._on_ai_request_failed_handler is not None:
+                    self._on_ai_request_failed_handler()
             except asyncio.CancelledError:
                 if self._active_analysis_task is asyncio.current_task():
                     if self._on_ai_request_cancelled_handler is not None:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Protocol
 
 from pdf_epub_reader.dto import (
+    AnalysisStatusTexts,
     PageData,
     PlotlyRenderRequest,
     PlotlySpec,
@@ -126,6 +127,14 @@ class MainPresenter:
         self._sandbox_executor = sandbox_executor
         self._plotly_worker_pool = ThreadPoolExecutor(max_workers=1)
         self._active_plotly_cancel_token: CancelToken | None = None
+        self._status_texts: AnalysisStatusTexts = (
+            self._translation_service.build_analysis_status_texts(
+            self._config.ui_language
+            )
+        )
+        self._latest_ai_elapsed_s: float | None = None
+        self._ai_timing_task: asyncio.Task[None] | None = None
+        self._plotly_render_requested = False
         self._base_dpi: int = self._config.default_dpi
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
@@ -183,6 +192,18 @@ class MainPresenter:
         )
         self._panel_presenter.set_on_plotly_render_handler(
             self._on_plotly_render
+        )
+        self._panel_presenter.set_on_ai_request_started_handler(
+            self._on_ai_request_started
+        )
+        self._panel_presenter.set_on_ai_request_finished_handler(
+            self._on_ai_request_finished
+        )
+        self._panel_presenter.set_on_ai_request_cancelled_handler(
+            self._on_ai_request_cancelled
+        )
+        self._panel_presenter.set_on_ai_request_failed_handler(
+            self._on_ai_request_failed
         )
 
         # Phase 7: キャッシュ操作のコールバックを登録
@@ -809,6 +830,38 @@ class MainPresenter:
         )
         save_config(self._config)
 
+    def _on_ai_request_started(self) -> None:
+        """AI request 開始時に running UI を表示する。"""
+        self._cancel_ai_timing_task()
+        self._latest_ai_elapsed_s = None
+        self._plotly_render_requested = False
+        self._view.show_running_operation(
+            self._status_texts.running_message,
+            self._panel_presenter.cancel_active_request,
+            self._status_texts.cancel_link_text,
+        )
+
+    def _on_ai_request_finished(self, elapsed_s: float) -> None:
+        """AI request 成功時に running UI を解除し、timing 表示を保留する。"""
+        self._latest_ai_elapsed_s = elapsed_s
+        self._view.clear_running_operation()
+        self._schedule_ai_timing_message()
+
+    def _on_ai_request_cancelled(self) -> None:
+        """AI request cancel 時に running UI を解除し、cancel status を出す。"""
+        self._cancel_ai_timing_task()
+        self._latest_ai_elapsed_s = None
+        self._plotly_render_requested = False
+        self._view.clear_running_operation()
+        self._view.show_status_message(self._status_texts.cancelled_message)
+
+    def _on_ai_request_failed(self) -> None:
+        """AI request が失敗したときに running UI を解除する。"""
+        self._cancel_ai_timing_task()
+        self._latest_ai_elapsed_s = None
+        self._plotly_render_requested = False
+        self._view.clear_running_operation()
+
     def _on_plotly_render(self, request: PlotlyRenderRequest) -> None:
         """PanelPresenter から渡された Plotly spec を復元して表示する。
 
@@ -818,6 +871,10 @@ class MainPresenter:
         """
         if not request.specs:
             return
+
+        self._plotly_render_requested = True
+        if request.ai_response_elapsed_s is not None:
+            self._latest_ai_elapsed_s = request.ai_response_elapsed_s
 
         plotly_texts = self._translation_service.build_plotly_texts(
             self._config.ui_language
@@ -979,9 +1036,59 @@ class MainPresenter:
 
     def _apply_view_texts(self, language: str) -> None:
         """MainWindow に対して解決済み UI 文言束を適用する。"""
+        self._status_texts = self._translation_service.build_analysis_status_texts(
+            language
+        )
         self._view.apply_ui_texts(
             self._translation_service.build_main_window_texts(language)
         )
+
+    def _cancel_ai_timing_task(self) -> None:
+        if self._ai_timing_task is not None:
+            self._ai_timing_task.cancel()
+            self._ai_timing_task = None
+
+    def _schedule_ai_timing_message(self) -> None:
+        if self._latest_ai_elapsed_s is None:
+            return
+
+        self._cancel_ai_timing_task()
+
+        async def _runner() -> None:
+            try:
+                await asyncio.sleep(0)
+                if self._plotly_render_requested:
+                    return
+                elapsed_s = self._latest_ai_elapsed_s
+                if elapsed_s is None:
+                    return
+                self._view.show_status_message(
+                    self._status_texts.timing_only.format(
+                        ai_seconds=self._format_seconds(elapsed_s)
+                    )
+                )
+            finally:
+                if self._ai_timing_task is asyncio.current_task():
+                    self._ai_timing_task = None
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            if not self._plotly_render_requested:
+                elapsed_s = self._latest_ai_elapsed_s
+                if elapsed_s is not None:
+                    self._view.show_status_message(
+                        self._status_texts.timing_only.format(
+                            ai_seconds=self._format_seconds(elapsed_s)
+                        )
+                    )
+            return
+
+        self._ai_timing_task = loop.create_task(_runner())
+
+    @staticmethod
+    def _format_seconds(value: float) -> str:
+        return f"{value:.1f}"
 
     def _translate(self, key: str, **kwargs: object) -> str:
         return self._translation_service.translate(

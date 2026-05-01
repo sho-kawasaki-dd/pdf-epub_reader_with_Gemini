@@ -26,6 +26,7 @@ from pdf_epub_reader.dto.document_dto import (
 )
 from pdf_epub_reader.dto.ui_text_dto import (
     BookmarkPanelTexts,
+    AnalysisStatusTexts,
     CacheDialogTexts,
     LanguageDialogTexts,
     MainWindowTexts,
@@ -41,6 +42,7 @@ __all__ = [
     "AnalysisResult",
     "AnalysisUsage",
     "BookmarkPanelTexts",
+    "AnalysisStatusTexts",
     "CacheStatus",
     "CacheDialogTexts",
     "DocumentInfo",

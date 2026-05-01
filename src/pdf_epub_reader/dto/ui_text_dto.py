@@ -40,6 +40,17 @@ class MainWindowTexts:
 
 
 @dataclass(frozen=True)
+class AnalysisStatusTexts:
+    """AI request の running / cancel / timing 文言。"""
+
+    running_message: str
+    cancelled_message: str
+    timing_only: str
+    timing_with_graph: str
+    cancel_link_text: str
+
+
+@dataclass(frozen=True)
 class SidePanelTexts:
     """サイドパネルで使う静的文言と表示テンプレート。"""
 

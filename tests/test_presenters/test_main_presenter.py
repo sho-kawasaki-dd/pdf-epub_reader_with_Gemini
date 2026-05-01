@@ -2151,3 +2151,112 @@ class TestPlotlyRenderFlow:
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "Plotly sandbox rejected the script: os",
         )
+
+
+class TestAIRequestStatus:
+    def _build_presenter(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> MainPresenter:
+        panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        return MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+        )
+
+    def test_ai_request_started_shows_running_ui(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = self._build_presenter(
+            mock_main_view,
+            mock_document_model,
+            mock_side_panel_view,
+            mock_ai_model,
+        )
+
+        presenter._on_ai_request_started()
+
+        running_calls = mock_main_view.get_calls("show_running_operation")
+        assert running_calls[-1][0] == "Running Gemini request..."
+        assert running_calls[-1][1] == "Cancel"
+        assert mock_main_view.get_calls("clear_running_operation") == []
+
+    @pytest.mark.asyncio
+    async def test_ai_request_finished_without_plotly_shows_timing(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = self._build_presenter(
+            mock_main_view,
+            mock_document_model,
+            mock_side_panel_view,
+            mock_ai_model,
+        )
+
+        presenter._on_ai_request_started()
+        presenter._on_ai_request_finished(1.23)
+
+        for _ in range(20):
+            status_calls = mock_main_view.get_calls("show_status_message")
+            if status_calls:
+                break
+            await asyncio.sleep(0)
+
+        assert mock_main_view.get_calls("clear_running_operation") == [()]
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "AI response: 1.2 s",
+        )
+
+    def test_ai_request_cancelled_shows_cancel_message(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = self._build_presenter(
+            mock_main_view,
+            mock_document_model,
+            mock_side_panel_view,
+            mock_ai_model,
+        )
+
+        presenter._on_ai_request_started()
+        presenter._on_ai_request_cancelled()
+
+        assert mock_main_view.get_calls("clear_running_operation") == [()]
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "Gemini request was cancelled.",
+        )
+
+    def test_ai_request_failed_clears_running_ui(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = self._build_presenter(
+            mock_main_view,
+            mock_document_model,
+            mock_side_panel_view,
+            mock_ai_model,
+        )
+
+        presenter._on_ai_request_started()
+        presenter._on_ai_request_failed()
+
+        assert mock_main_view.get_calls("clear_running_operation") == [()]
+        assert mock_main_view.get_calls("show_status_message") == []
