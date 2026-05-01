@@ -481,6 +481,11 @@ class PanelPresenter:
                 )
                 return
             self._view.show_loading(True)
+            self._view.show_ai_request_running(
+                self._translate("ai.running_message"),
+                self._translate("ai.cancel_link_text"),
+                self.cancel_active_request,
+            )
             try:
                 if self._on_ai_request_started_handler is not None:
                     self._on_ai_request_started_handler()
@@ -553,6 +558,7 @@ class PanelPresenter:
                 # current task と一致する場合だけ loading を落とし、二重 request 時の
                 # 新しい task による表示を誤って消さないようにする。
                 if self._active_analysis_task is asyncio.current_task():
+                    self._view.clear_ai_request_running()
                     self._view.show_loading(False)
         finally:
             self._clear_active_analysis_task_if_current()
@@ -591,6 +597,11 @@ class PanelPresenter:
                 )
                 return
             self._view.show_loading(True)
+            self._view.show_ai_request_running(
+                self._translate("ai.running_message"),
+                self._translate("ai.cancel_link_text"),
+                self.cancel_active_request,
+            )
             try:
                 if self._on_ai_request_started_handler is not None:
                     self._on_ai_request_started_handler()
@@ -659,6 +670,7 @@ class PanelPresenter:
                 # 現在の task に限って loading を解除し、古い task の finally で
                 # 新しい request の表示を消してしまわないようにする。
                 if self._active_analysis_task is asyncio.current_task():
+                    self._view.clear_ai_request_running()
                     self._view.show_loading(False)
         finally:
             self._clear_active_analysis_task_if_current()

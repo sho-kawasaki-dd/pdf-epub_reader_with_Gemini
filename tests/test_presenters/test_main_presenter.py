@@ -2202,9 +2202,7 @@ class TestAIRequestStatus:
 
         presenter._on_ai_request_started()
 
-        running_calls = mock_main_view.get_calls("show_running_operation")
-        assert running_calls[-1][0] == "Running Gemini request..."
-        assert running_calls[-1][1] == "Cancel"
+        assert mock_main_view.get_calls("show_running_operation") == []
         assert mock_main_view.get_calls("clear_running_operation") == []
 
     @pytest.mark.asyncio
@@ -2231,7 +2229,7 @@ class TestAIRequestStatus:
                 break
             await asyncio.sleep(0)
 
-        assert mock_main_view.get_calls("clear_running_operation") == [()]
+        assert mock_main_view.get_calls("clear_running_operation") == []
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "AI response: 1.2 s",
         )
@@ -2253,7 +2251,7 @@ class TestAIRequestStatus:
         presenter._on_ai_request_started()
         presenter._on_ai_request_cancelled()
 
-        assert mock_main_view.get_calls("clear_running_operation") == [()]
+        assert mock_main_view.get_calls("clear_running_operation") == []
         assert mock_main_view.get_calls("show_status_message")[-1] == (
             "Gemini request was cancelled.",
         )
@@ -2275,5 +2273,5 @@ class TestAIRequestStatus:
         presenter._on_ai_request_started()
         presenter._on_ai_request_failed()
 
-        assert mock_main_view.get_calls("clear_running_operation") == [()]
+        assert mock_main_view.get_calls("clear_running_operation") == []
         assert mock_main_view.get_calls("show_status_message") == []

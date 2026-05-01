@@ -378,6 +378,7 @@ class SidePanelView(QWidget):
         self._selection_snapshot = SelectionSnapshot()
         self._combined_selection_preview = ""
         self._plotly_mode = "off"
+        self._ai_request_cancel_callback: Callable[[], None] | None = None
 
         # Phase 7.5: カウントダウン状態
         self._on_cache_expired: Callable[[], None] | None = None
@@ -465,6 +466,19 @@ class SidePanelView(QWidget):
         self._progress_bar.setRange(0, 0)
         self._progress_bar.setVisible(False)
         ai_layout.addWidget(self._progress_bar)
+
+        self._ai_request_row = QWidget()
+        self._ai_request_row.setVisible(False)
+        ai_request_layout = QHBoxLayout(self._ai_request_row)
+        ai_request_layout.setContentsMargins(0, 0, 0, 0)
+        ai_request_layout.setSpacing(8)
+        self._ai_request_status_label = QLabel("")
+        self._ai_request_status_label.setWordWrap(True)
+        ai_request_layout.addWidget(self._ai_request_status_label, 1)
+        self._ai_request_cancel_btn = QPushButton("")
+        self._ai_request_cancel_btn.clicked.connect(self._fire_ai_request_cancel)
+        ai_request_layout.addWidget(self._ai_request_cancel_btn)
+        ai_layout.addWidget(self._ai_request_row)
 
         action_row = QHBoxLayout()
         self._plotly_toggle_btn = QToolButton()
@@ -633,6 +647,23 @@ class SidePanelView(QWidget):
         for btn in self._all_buttons:
             btn.setEnabled(not loading)
 
+    def show_ai_request_running(
+        self,
+        message: str,
+        cancel_text: str,
+        cancel_cb: Callable[[], None],
+    ) -> None:
+        """AI request 実行中の補助 UI を AI セクション内に表示する。"""
+        self._ai_request_cancel_callback = cancel_cb
+        self._ai_request_status_label.setText(message)
+        self._ai_request_cancel_btn.setText(cancel_text)
+        self._ai_request_row.setVisible(True)
+
+    def clear_ai_request_running(self) -> None:
+        """AI request 実行中の補助 UI を非表示にする。"""
+        self._ai_request_cancel_callback = None
+        self._ai_request_row.setVisible(False)
+
     def update_cache_status_brief(self, text: str) -> None:
         """キャッシュステータスラベルのテキストを差し替える。
 
@@ -666,6 +697,7 @@ class SidePanelView(QWidget):
         self._apply_plotly_mode_visuals()
         self._translate_btn.setText(self._text("translation_button_text"))
         self._explain_btn.setText(self._text("translation_explain_button_text"))
+        self._ai_request_cancel_btn.setText(self._text("custom_submit_button_text"))
         self._export_btn.setText(self._text("export_button_text"))
         self._tab_widget.setTabText(0, self._text("translation_tab_text"))
         self._prompt_edit.setPlaceholderText(self._text("custom_prompt_placeholder"))
@@ -930,6 +962,11 @@ class SidePanelView(QWidget):
         """共有 export ボタンのクリックをコールバックに変換する。"""
         if self._on_export_requested:
             self._on_export_requested()
+
+    def _fire_ai_request_cancel(self) -> None:
+        """AI request 補助 UI 上の Cancel ボタンを callback に中継する。"""
+        if self._ai_request_cancel_callback is not None:
+            self._ai_request_cancel_callback()
 
     def _fire_force_image_toggled(self, checked: bool) -> None:
         """チェックボックスの切り替えをコールバックに変換する。"""

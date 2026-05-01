@@ -309,6 +309,7 @@ class MockSidePanelView:
         self._cache_is_active: bool = False
         self._confirm_dialog_return: bool = True
         self._on_cache_expired: Callable[[], None] | None = None
+        self._ai_request_cancel_callback: Callable[[], None] | None = None
 
     # --- Display commands ---
 
@@ -334,6 +335,21 @@ class MockSidePanelView:
 
     def show_loading(self, loading: bool) -> None:
         self.calls.append(("show_loading", (loading,)))
+
+    def show_ai_request_running(
+        self,
+        message: str,
+        cancel_text: str,
+        cancel_cb: Callable[[], None],
+    ) -> None:
+        self._ai_request_cancel_callback = cancel_cb
+        self.calls.append(
+            ("show_ai_request_running", (message, cancel_text))
+        )
+
+    def clear_ai_request_running(self) -> None:
+        self._ai_request_cancel_callback = None
+        self.calls.append(("clear_ai_request_running", ()))
 
     def update_cache_status_brief(self, text: str) -> None:
         self.calls.append(("update_cache_status_brief", (text,)))
@@ -481,6 +497,10 @@ class MockSidePanelView:
         """View のカウントダウン 0 到達を擬似するヘルパー。"""
         if self._on_cache_expired:
             self._on_cache_expired()
+
+    def simulate_ai_request_cancel_requested(self) -> None:
+        if self._ai_request_cancel_callback:
+            self._ai_request_cancel_callback()
 
     # --- Helpers ---
 

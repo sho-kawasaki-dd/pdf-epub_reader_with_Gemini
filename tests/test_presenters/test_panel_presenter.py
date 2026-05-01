@@ -190,9 +190,16 @@ class TestLoadingState:
         await panel_presenter._do_translate(include_explanation=False)
 
         loading_calls = mock_side_panel_view.get_calls("show_loading")
+        running_calls = mock_side_panel_view.get_calls("show_ai_request_running")
+        clear_running_calls = mock_side_panel_view.get_calls("clear_ai_request_running")
         assert len(loading_calls) == 2
         assert loading_calls[0] == (True,)   # 処理開始時
         assert loading_calls[1] == (False,)  # 処理終了時
+        assert running_calls == [(
+            "Gemini request を実行中...",
+            "キャンセル",
+        )]
+        assert clear_running_calls == [()]
 
     @pytest.mark.asyncio
     async def test_loading_shown_during_custom_prompt(
@@ -207,9 +214,16 @@ class TestLoadingState:
         await panel_presenter._do_custom_prompt("Do something")
 
         loading_calls = mock_side_panel_view.get_calls("show_loading")
+        running_calls = mock_side_panel_view.get_calls("show_ai_request_running")
+        clear_running_calls = mock_side_panel_view.get_calls("clear_ai_request_running")
         assert len(loading_calls) == 2
         assert loading_calls[0] == (True,)
         assert loading_calls[1] == (False,)
+        assert running_calls == [(
+            "Gemini request を実行中...",
+            "キャンセル",
+        )]
+        assert clear_running_calls == [()]
 
 
 class TestRequestLifecycle:
@@ -250,6 +264,11 @@ class TestRequestLifecycle:
 
         assert panel_presenter._active_analysis_task is None
         assert mock_side_panel_view.get_calls("show_loading") == [(True,), (False,)]
+        assert mock_side_panel_view.get_calls("show_ai_request_running") == [(
+            "Gemini request を実行中...",
+            "キャンセル",
+        )]
+        assert mock_side_panel_view.get_calls("clear_ai_request_running") == [()]
         assert mock_side_panel_view.get_calls("update_result_text") == []
 
 

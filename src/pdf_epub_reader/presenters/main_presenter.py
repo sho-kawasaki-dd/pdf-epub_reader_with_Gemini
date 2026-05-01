@@ -840,16 +840,11 @@ class MainPresenter:
         """AI request 開始時に running UI を表示する。
 
         ここでは前回 request に紐づく timing 予約を破棄し、今まさに動いている
-        request だけが Cancel できる状態を status bar に出す。
+        request の timing 状態だけを初期化する。
         """
         self._cancel_ai_timing_task()
         self._latest_ai_elapsed_s = None
         self._plotly_render_requested = False
-        self._view.show_running_operation(
-            self._status_texts.running_message,
-            self._panel_presenter.cancel_active_request,
-            self._status_texts.cancel_link_text,
-        )
 
     def _on_ai_request_finished(self, elapsed_s: float) -> None:
         """AI request 成功時に running UI を解除し、timing 表示を保留する。
@@ -858,7 +853,6 @@ class MainPresenter:
         まず elapsed 値だけを保持して後段の描画結果に合わせる。
         """
         self._latest_ai_elapsed_s = elapsed_s
-        self._view.clear_running_operation()
         self._schedule_ai_timing_message()
 
     def _on_ai_request_cancelled(self) -> None:
@@ -870,7 +864,6 @@ class MainPresenter:
         self._cancel_ai_timing_task()
         self._latest_ai_elapsed_s = None
         self._plotly_render_requested = False
-        self._view.clear_running_operation()
         self._view.show_status_message(self._status_texts.cancelled_message)
 
     def _on_ai_request_failed(self) -> None:
@@ -882,7 +875,6 @@ class MainPresenter:
         self._cancel_ai_timing_task()
         self._latest_ai_elapsed_s = None
         self._plotly_render_requested = False
-        self._view.clear_running_operation()
 
     def _on_plotly_render(self, request: PlotlyRenderRequest) -> None:
         """PanelPresenter から渡された Plotly spec を復元して表示する。

@@ -247,6 +247,31 @@ class TestSidePanelTranslations:
         assert panel._cache_label.text() == "キャッシュステータス: ---"
         panel.close()
 
+    def test_ai_request_running_ui_is_shown_inside_side_panel(self) -> None:
+        panel = SidePanelView(ui_language="en")
+        panel.apply_ui_texts(_TRANSLATIONS.build_side_panel_texts("en"))
+
+        observed: list[str] = []
+
+        panel.show_ai_request_running(
+            "Running Gemini request...",
+            "Cancel",
+            lambda: observed.append("cancelled"),
+        )
+
+        assert not panel._ai_request_row.isHidden()
+        assert panel._ai_request_status_label.text() == "Running Gemini request..."
+        assert panel._ai_request_cancel_btn.text() == "Cancel"
+
+        panel._ai_request_cancel_btn.click()
+
+        assert observed == ["cancelled"]
+
+        panel.clear_ai_request_running()
+
+        assert panel._ai_request_row.isHidden()
+        panel.close()
+
     def test_plotly_button_cycles_through_three_modes(self) -> None:
         panel = SidePanelView(ui_language="en")
         panel.apply_ui_texts(_TRANSLATIONS.build_side_panel_texts("en"))
