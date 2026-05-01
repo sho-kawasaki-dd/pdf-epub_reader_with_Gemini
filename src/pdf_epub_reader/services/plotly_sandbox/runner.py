@@ -170,6 +170,17 @@ def _enable_site_packages() -> None:
     site.main()
 
 
+def _configure_stdio() -> None:
+    """stdout / stderr を UTF-8 に固定して親側の decode 前提と揃える。"""
+    stdout = getattr(sys, "stdout", None)
+    stderr = getattr(sys, "stderr", None)
+
+    if stdout is not None and hasattr(stdout, "reconfigure"):
+        stdout.reconfigure(encoding="utf-8", errors="strict")
+    if stderr is not None and hasattr(stderr, "reconfigure"):
+        stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def execute_code(
     code: str,
     *,
@@ -222,6 +233,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     """runner のエントリーポイント。"""
+    _configure_stdio()
     args = _parse_args(argv)
     code = Path(args.code_path).read_text(encoding="utf-8")
     return execute_code(code)

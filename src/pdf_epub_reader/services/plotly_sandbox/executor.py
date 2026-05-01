@@ -97,6 +97,8 @@ class SandboxExecutor:
             process = subprocess.Popen(
                 [
                     str(python_path),
+                    "-X",
+                    "utf8",
                     "-I",
                     "-S",
                     str(self._runner_path),

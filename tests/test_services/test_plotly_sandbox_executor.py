@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import threading
 import time
@@ -55,6 +56,27 @@ class TestSandboxExecutor:
 
         assert '"data"' in result
         assert '"scatter"' in result
+
+    def test_run_preserves_unicode_in_json_stdout(self, tmp_path) -> None:
+        executor = SandboxExecutor(
+            provisioner=_StubProvisioner(),
+            log_dir=tmp_path / "logs",
+        )
+
+        result = executor.run(
+            "import plotly.graph_objects as go\n"
+            "fig = go.Figure()\n"
+            "fig.add_scatter(x=[1, 2], y=[3, 4], name='指数関数的減衰 λ1')\n"
+            "fig.update_layout(title='関数の時間発展')\n"
+            "print(fig.to_json())\n",
+            timeout_s=5.0,
+            cancel_token=CancelToken(),
+        )
+
+        payload = json.loads(result)
+
+        assert payload["data"][0]["name"] == "指数関数的減衰 λ1"
+        assert payload["layout"]["title"]["text"] == "関数の時間発展"
 
     def test_run_uses_last_valid_json_line_when_stdout_contains_noise(self, tmp_path) -> None:
         executor = SandboxExecutor(
