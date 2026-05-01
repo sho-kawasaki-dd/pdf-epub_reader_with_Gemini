@@ -8,6 +8,7 @@ PanelPresenter は、ユーザーが選択したテキストに対して
 from __future__ import annotations
 
 import asyncio
+import time
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -433,13 +434,18 @@ class PanelPresenter:
 
         # ボタンクリック自体は同期イベントなので、その場で await せず
         # タスク化して UI スレッドをふさがないようにする。
-        self._active_analysis_task = asyncio.ensure_future(
+        if self._active_analysis_task is not None:
+            self._active_analysis_task.cancel()
+        self._active_analysis_task = asyncio.create_task(
             self._do_translate(include_explanation)
         )
 
     async def _do_translate(self, include_explanation: bool) -> None:
         """翻訳モードで AI 解析を実行し、結果を View に返す。"""
         self._active_tab_mode = AnalysisMode.TRANSLATION
+        current_task = asyncio.current_task()
+        if self._active_analysis_task is None and current_task is not None:
+            self._active_analysis_task = current_task
         try:
             analysis_text = self._build_analysis_text()
             if not analysis_text:
@@ -453,6 +459,9 @@ class PanelPresenter:
                 return
             self._view.show_loading(True)
             try:
+                if self._on_ai_request_started_handler is not None:
+                    self._on_ai_request_started_handler()
+                start_time = time.perf_counter()
                 request = AnalysisRequest(
                     text=analysis_text,
                     mode=AnalysisMode.TRANSLATION,
@@ -462,6 +471,7 @@ class PanelPresenter:
                     request_plotly_mode=self._plotly_mode,
                 )
                 result = await self._ai_model.analyze(request)
+                elapsed_s = time.perf_counter() - start_time
 
                 display = result.translated_text or result.raw_response
                 if include_explanation and result.explanation:
@@ -472,7 +482,9 @@ class PanelPresenter:
                     result=result,
                     include_explanation=include_explanation,
                 )
-                self._handle_plotly_response(request, result)
+                if self._on_ai_request_finished_handler is not None:
+                    self._on_ai_request_finished_handler(elapsed_s)
+                self._handle_plotly_response(request, result, elapsed_s)
             except AIKeyMissingError:
                 self._reset_plotly_specs()
                 self._invalidate_export_state(AnalysisMode.TRANSLATION)
@@ -494,20 +506,36 @@ class PanelPresenter:
                         message=exc.message,
                     )
                 )
+            except asyncio.CancelledError:
+                if self._active_analysis_task is asyncio.current_task():
+                    if self._on_ai_request_cancelled_handler is not None:
+                        self._on_ai_request_cancelled_handler()
+                raise
+            except Exception:
+                if self._active_analysis_task is asyncio.current_task():
+                    if self._on_ai_request_failed_handler is not None:
+                        self._on_ai_request_failed_handler()
+                raise
             finally:
-                self._view.show_loading(False)
+                if self._active_analysis_task is asyncio.current_task():
+                    self._view.show_loading(False)
         finally:
             self._clear_active_analysis_task_if_current()
 
     def _on_custom_prompt_submitted(self, prompt: str) -> None:
         """カスタムプロンプト送信を受け取り、非同期処理を開始する。"""
-        self._active_analysis_task = asyncio.ensure_future(
+        if self._active_analysis_task is not None:
+            self._active_analysis_task.cancel()
+        self._active_analysis_task = asyncio.create_task(
             self._do_custom_prompt(prompt)
         )
 
     async def _do_custom_prompt(self, prompt: str) -> None:
         """カスタムプロンプトモードで AI 解析を実行する。"""
         self._active_tab_mode = AnalysisMode.CUSTOM_PROMPT
+        current_task = asyncio.current_task()
+        if self._active_analysis_task is None and current_task is not None:
+            self._active_analysis_task = current_task
         try:
             analysis_text = self._build_analysis_text()
             if not analysis_text:
@@ -521,6 +549,9 @@ class PanelPresenter:
                 return
             self._view.show_loading(True)
             try:
+                if self._on_ai_request_started_handler is not None:
+                    self._on_ai_request_started_handler()
+                start_time = time.perf_counter()
                 request = AnalysisRequest(
                     text=analysis_text,
                     mode=AnalysisMode.CUSTOM_PROMPT,
@@ -530,13 +561,16 @@ class PanelPresenter:
                     request_plotly_mode=self._plotly_mode,
                 )
                 result = await self._ai_model.analyze(request)
+                elapsed_s = time.perf_counter() - start_time
                 self._view.update_result_text(result.raw_response)
                 self._store_export_state(
                     action_mode=AnalysisMode.CUSTOM_PROMPT,
                     result=result,
                     include_explanation=False,
                 )
-                self._handle_plotly_response(request, result)
+                if self._on_ai_request_finished_handler is not None:
+                    self._on_ai_request_finished_handler(elapsed_s)
+                self._handle_plotly_response(request, result, elapsed_s)
             except AIKeyMissingError:
                 self._reset_plotly_specs()
                 self._invalidate_export_state(AnalysisMode.CUSTOM_PROMPT)
@@ -558,8 +592,19 @@ class PanelPresenter:
                         message=exc.message,
                     )
                 )
+            except asyncio.CancelledError:
+                if self._active_analysis_task is asyncio.current_task():
+                    if self._on_ai_request_cancelled_handler is not None:
+                        self._on_ai_request_cancelled_handler()
+                raise
+            except Exception:
+                if self._active_analysis_task is asyncio.current_task():
+                    if self._on_ai_request_failed_handler is not None:
+                        self._on_ai_request_failed_handler()
+                raise
             finally:
-                self._view.show_loading(False)
+                if self._active_analysis_task is asyncio.current_task():
+                    self._view.show_loading(False)
         finally:
             self._clear_active_analysis_task_if_current()
 
@@ -674,6 +719,7 @@ class PanelPresenter:
         self,
         request: AnalysisRequest,
         result: AnalysisResult,
+        elapsed_s: float,
     ) -> None:
         """AI 応答から Plotly spec を抽出し、描画要求へ変換する。
 
@@ -696,7 +742,7 @@ class PanelPresenter:
                 PlotlyRenderRequest(
                     specs=selected_specs,
                     origin_mode=request.request_plotly_mode,
-                    ai_response_elapsed_s=None,
+                    ai_response_elapsed_s=elapsed_s,
                 )
             )
 

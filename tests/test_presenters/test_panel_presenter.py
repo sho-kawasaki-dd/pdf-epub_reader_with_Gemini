@@ -442,6 +442,7 @@ class TestPlotlyRenderFlow:
         panel_presenter: PanelPresenter,
         mock_ai_model: MockAIModel,
         mock_side_panel_view: MockSidePanelView,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         panel_presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello world"))
@@ -460,6 +461,14 @@ class TestPlotlyRenderFlow:
         )
         rendered: list[PlotlyRenderRequest] = []
         panel_presenter.set_on_plotly_render_handler(rendered.append)
+        elapsed_values = iter([10.0, 10.5])
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.panel_presenter.time.perf_counter",
+            lambda: next(elapsed_values),
+        )
+
+        finished: list[float] = []
+        panel_presenter.set_on_ai_request_finished_handler(finished.append)
 
         await panel_presenter._do_translate(include_explanation=False)
 
@@ -467,10 +476,11 @@ class TestPlotlyRenderFlow:
         assert request.request_plotly_mode == "json"
         assert len(rendered) == 1
         assert rendered[0].origin_mode == "json"
-        assert rendered[0].ai_response_elapsed_s is None
+        assert rendered[0].ai_response_elapsed_s == pytest.approx(0.5)
         assert len(rendered[0].specs) == 1
         assert rendered[0].specs[0].title == "Velocity Plot"
         assert panel_presenter._latest_plotly_specs == rendered[0].specs
+        assert finished == [0.5]
 
     @pytest.mark.asyncio
     async def test_translate_with_python_plotly_mode_requests_python(
@@ -830,6 +840,74 @@ class TestErrorHandling:
 
         loading_calls = mock_side_panel_view.get_calls("show_loading")
         assert loading_calls[-1] == (False,)
+
+    @pytest.mark.asyncio
+    async def test_cancel_active_request_emits_cancel_handler(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
+        presenter.set_selected_model("models/gemini-2.0-flash")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
+
+        started = asyncio.Event()
+
+        async def _analyze(request):
+            started.set()
+            await asyncio.Event().wait()
+
+        mock_ai_model.analyze = AsyncMock(side_effect=_analyze)
+
+        cancelled: list[bool] = []
+        presenter.set_on_ai_request_cancelled_handler(
+            lambda: cancelled.append(True)
+        )
+
+        presenter._on_translate_requested(include_explanation=False)
+        await started.wait()
+
+        active_task = presenter._active_analysis_task
+        assert active_task is not None
+
+        presenter.cancel_active_request()
+
+        with pytest.raises(asyncio.CancelledError):
+            await active_task
+
+        assert cancelled == [True]
+        assert mock_side_panel_view.get_calls("update_result_text") == []
+        assert mock_ai_model.get_calls("invalidate_cache") == []
+
+    @pytest.mark.asyncio
+    async def test_unexpected_exception_emits_failed_handler(
+        self,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        presenter = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        presenter.set_available_models(["models/gemini-2.0-flash"])
+        presenter.set_selected_model("models/gemini-2.0-flash")
+        presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello"))
+        )
+        mock_ai_model.analyze = AsyncMock(side_effect=RuntimeError("boom"))
+
+        failed: list[bool] = []
+        presenter.set_on_ai_request_failed_handler(lambda: failed.append(True))
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await presenter._do_translate(include_explanation=False)
+
+        assert failed == [True]
+        assert mock_side_panel_view.get_calls("update_result_text") == []
 
 
 class TestModelSelection:
