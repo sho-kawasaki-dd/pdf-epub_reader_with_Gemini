@@ -326,52 +326,39 @@ class TestForceImageToggle:
 
 
 class TestPlotlyToggle:
-    """Step 5: Plotly 可視化トグルの状態管理を検証する。"""
+    """Step 5: Plotly 可視化モードの状態管理を検証する。"""
 
-    def test_initial_plotly_enabled_is_false(
+    def test_initial_plotly_mode_is_off(
         self,
         panel_presenter: PanelPresenter,
     ) -> None:
-        assert panel_presenter._plotly_enabled is False
+        assert panel_presenter._plotly_mode == "off"
 
-    def test_set_plotly_enabled_propagates_to_view(
-        self,
-        panel_presenter: PanelPresenter,
-        mock_side_panel_view: MockSidePanelView,
-    ) -> None:
-        panel_presenter.set_plotly_enabled(True)
-
-        assert panel_presenter._plotly_enabled is True
-        assert mock_side_panel_view.get_calls("set_plotly_toggle_checked")[-1] == (
-            True,
-        )
-
-    def test_set_plotly_mode_preserves_python_mode_while_checking_toggle(
+    def test_set_plotly_mode_propagates_to_view(
         self,
         panel_presenter: PanelPresenter,
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
         panel_presenter.set_plotly_mode("python")
 
-        assert panel_presenter._plotly_enabled is True
         assert panel_presenter._plotly_mode == "python"
-        assert mock_side_panel_view.get_calls("set_plotly_toggle_checked")[-1] == (
-            True,
+        assert mock_side_panel_view.get_calls("set_plotly_mode")[-1] == (
+            "python",
         )
 
-    def test_toggle_updates_state_and_notifies_handler(
+    def test_mode_change_updates_state_and_notifies_handler(
         self,
         panel_presenter: PanelPresenter,
         mock_side_panel_view: MockSidePanelView,
     ) -> None:
-        observed: list[bool] = []
-        panel_presenter.set_on_plotly_toggle_changed_handler(observed.append)
+        observed: list[str] = []
+        panel_presenter.set_on_plotly_mode_changed_handler(observed.append)
 
-        mock_side_panel_view.simulate_plotly_toggled(True)
-        mock_side_panel_view.simulate_plotly_toggled(False)
+        mock_side_panel_view.simulate_plotly_mode_changed("json")
+        mock_side_panel_view.simulate_plotly_mode_changed("python")
 
-        assert panel_presenter._plotly_enabled is False
-        assert observed == [True, False]
+        assert panel_presenter._plotly_mode == "python"
+        assert observed == ["json", "python"]
 
 
 class TestPlotlyRenderFlow:
@@ -408,7 +395,7 @@ class TestPlotlyRenderFlow:
         assert panel_presenter._latest_plotly_specs == []
 
     @pytest.mark.asyncio
-    async def test_translate_with_plotly_enabled_emits_render_request(
+    async def test_translate_with_plotly_json_mode_emits_render_request(
         self,
         panel_presenter: PanelPresenter,
         mock_ai_model: MockAIModel,
@@ -417,7 +404,7 @@ class TestPlotlyRenderFlow:
         panel_presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello world"))
         )
-        mock_side_panel_view.simulate_plotly_toggled(True)
+        mock_side_panel_view.simulate_plotly_mode_changed("json")
         mock_ai_model.analyze = AsyncMock(
             return_value=AnalysisResult(
                 translated_text="done",
@@ -536,7 +523,7 @@ class TestPlotlyRenderFlow:
         presenter.set_selection_snapshot(
             _make_snapshot(_make_slot(1, 0, "Hello"))
         )
-        presenter.set_plotly_enabled(True)
+        presenter.set_plotly_mode("json")
         presenter._latest_plotly_specs = [object()]  # type: ignore[list-item]
         mock_ai_model.analyze = AsyncMock(
             side_effect=AIAPIError("Something went wrong", status_code=500)

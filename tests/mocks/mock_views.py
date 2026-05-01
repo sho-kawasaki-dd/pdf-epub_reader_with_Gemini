@@ -279,7 +279,7 @@ class MockSidePanelView:
         self._on_export_requested: Callable[[], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
-        self._on_plotly_toggled: Callable[[bool], None] | None = None
+        self._on_plotly_mode_changed: Callable[[str], None] | None = None
         self._on_selection_delete_requested: (
             Callable[[str], None] | None
         ) = None
@@ -346,10 +346,10 @@ class MockSidePanelView:
     ) -> None:
         self._on_force_image_toggled = cb
 
-    def set_on_plotly_toggled(
-        self, cb: Callable[[bool], None]
+    def set_on_plotly_mode_changed(
+        self, cb: Callable[[str], None]
     ) -> None:
-        self._on_plotly_toggled = cb
+        self._on_plotly_mode_changed = cb
 
     def set_on_selection_delete_requested(
         self, cb: Callable[[str], None]
@@ -375,8 +375,8 @@ class MockSidePanelView:
     def set_model_combo_enabled(self, enabled: bool) -> None:
         self.calls.append(("set_model_combo_enabled", (enabled,)))
 
-    def set_plotly_toggle_checked(self, checked: bool) -> None:
-        self.calls.append(("set_plotly_toggle_checked", (checked,)))
+    def set_plotly_mode(self, mode: str) -> None:
+        self.calls.append(("set_plotly_mode", (mode,)))
 
     # --- Phase 7: キャッシュ操作 ---
 
@@ -434,9 +434,9 @@ class MockSidePanelView:
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
 
-    def simulate_plotly_toggled(self, checked: bool) -> None:
-        if self._on_plotly_toggled:
-            self._on_plotly_toggled(checked)
+    def simulate_plotly_mode_changed(self, mode: str) -> None:
+        if self._on_plotly_mode_changed:
+            self._on_plotly_mode_changed(mode)
 
     def simulate_selection_delete_requested(self, selection_id: str) -> None:
         if self._on_selection_delete_requested:

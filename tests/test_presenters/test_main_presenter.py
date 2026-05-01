@@ -935,11 +935,11 @@ class TestSettingsFlow:
             config=config,
         )
 
-        assert mock_side_panel_view.get_calls("set_plotly_toggle_checked")[-1] == (
-            True,
+        assert mock_side_panel_view.get_calls("set_plotly_mode")[-1] == (
+            "json",
         )
 
-    def test_plotly_toggle_change_updates_config_and_saves(
+    def test_plotly_mode_change_updates_config_and_saves(
         self,
         mock_main_view: MockMainView,
         mock_document_model: MockDocumentModel,
@@ -960,9 +960,9 @@ class TestSettingsFlow:
         )
 
         with patch("pdf_epub_reader.presenters.main_presenter.save_config") as mock_save:
-            mock_side_panel_view.simulate_plotly_toggled(True)
+            mock_side_panel_view.simulate_plotly_mode_changed("python")
 
-        assert config.plotly_visualization_mode == "json"
+        assert config.plotly_visualization_mode == "python"
         mock_save.assert_called_once_with(config)
 
     @pytest.mark.asyncio

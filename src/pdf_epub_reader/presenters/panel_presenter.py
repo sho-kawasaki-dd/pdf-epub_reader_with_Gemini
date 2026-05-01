@@ -72,7 +72,6 @@ class PanelPresenter:
         self._ui_language = normalize_ui_language(ui_language, fallback="en")
         self._selection_snapshot = SelectionSnapshot()
         self._force_include_image: bool = False
-        self._plotly_enabled: bool = False
         self._plotly_mode = normalize_plotly_visualization_mode("off")
         self._latest_plotly_specs: list[PlotlySpec] = []
         self._active_tab_mode = AnalysisMode.TRANSLATION
@@ -85,7 +84,7 @@ class PanelPresenter:
         ) = None
         self._on_clear_selections_handler: Callable[[], None] | None = None
         self._on_export_requested_handler: Callable[[], None] | None = None
-        self._on_plotly_toggle_changed_handler: Callable[[bool], None] | None = None
+        self._on_plotly_mode_changed_handler: Callable[[str], None] | None = None
         self._on_plotly_render_handler: (
             Callable[[PlotlyRenderRequest], None] | None
         ) = None
@@ -103,7 +102,7 @@ class PanelPresenter:
         self._view.set_on_export_requested(self._fire_export_requested)
         self._view.set_on_tab_changed(self._on_tab_changed)
         self._view.set_on_force_image_toggled(self._on_force_image_toggled)
-        self._view.set_on_plotly_toggled(self._on_plotly_toggled)
+        self._view.set_on_plotly_mode_changed(self._on_plotly_mode_changed)
         self._view.set_on_selection_delete_requested(
             self._fire_selection_delete_requested
         )
@@ -269,11 +268,11 @@ class PanelPresenter:
         """MainPresenter が登録する export 要求ハンドラ。"""
         self._on_export_requested_handler = cb
 
-    def set_on_plotly_toggle_changed_handler(
-        self, cb: Callable[[bool], None]
+    def set_on_plotly_mode_changed_handler(
+        self, cb: Callable[[str], None]
     ) -> None:
-        """MainPresenter が登録する Plotly トグル変更ハンドラ。"""
-        self._on_plotly_toggle_changed_handler = cb
+        """MainPresenter が登録する Plotly モード変更ハンドラ。"""
+        self._on_plotly_mode_changed_handler = cb
 
     def set_on_plotly_render_handler(
         self, cb: Callable[[PlotlyRenderRequest], None]
@@ -281,21 +280,11 @@ class PanelPresenter:
         """MainPresenter が登録する Plotly 描画要求ハンドラ。"""
         self._on_plotly_render_handler = cb
 
-    def set_plotly_enabled(self, enabled: bool) -> None:
-        """永続化済み Plotly トグル状態を View と内部状態へ反映する。"""
-        self._plotly_enabled = enabled
-        if not enabled:
-            self._plotly_mode = "off"
-        elif self._plotly_mode == "off":
-            self._plotly_mode = "json"
-        self._view.set_plotly_toggle_checked(enabled)
-
     def set_plotly_mode(self, mode: str) -> None:
         """Plotly mode を保持しつつ、現行の boolean UI へ反映する。"""
         normalized = normalize_plotly_visualization_mode(mode)
         self._plotly_mode = normalized
-        self._plotly_enabled = normalized != "off"
-        self._view.set_plotly_toggle_checked(self._plotly_enabled)
+        self._view.set_plotly_mode(normalized)
 
     def set_on_cache_invalidate_handler(
         self, cb: Callable[[], None]
@@ -355,16 +344,12 @@ class PanelPresenter:
         """「画像としても送信」チェックボックスの状態変更を記録する。"""
         self._force_include_image = checked
 
-    def _on_plotly_toggled(self, checked: bool) -> None:
-        """Plotly 可視化トグルの状態変更を記録して MainPresenter に通知する。"""
-        self._plotly_enabled = checked
-        if checked:
-            if self._plotly_mode == "off":
-                self._plotly_mode = "json"
-        else:
-            self._plotly_mode = "off"
-        if self._on_plotly_toggle_changed_handler is not None:
-            self._on_plotly_toggle_changed_handler(checked)
+    def _on_plotly_mode_changed(self, mode: str) -> None:
+        """Plotly 可視化モードの変更を記録して MainPresenter に通知する。"""
+        normalized = normalize_plotly_visualization_mode(mode)
+        self._plotly_mode = normalized
+        if self._on_plotly_mode_changed_handler is not None:
+            self._on_plotly_mode_changed_handler(normalized)
 
     def _on_tab_changed(self, mode: str) -> None:
         """アクティブタブ変更に応じて export 可能状態を更新する。"""

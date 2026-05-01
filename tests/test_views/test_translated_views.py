@@ -187,9 +187,8 @@ class TestSidePanelTranslations:
         assert panel._translate_btn.text() == "Translate"
         assert panel._explain_btn.text() == "Translate with Explanation"
         assert panel._export_btn.text() == "Export Markdown"
-        assert panel._plotly_toggle_btn.toolTip() == (
-            "Request Plotly JSON when the response can be visualized"
-        )
+        assert panel._plotly_toggle_btn.text() == "📊"
+        assert panel._plotly_toggle_btn.toolTip() == "Plotly visualization is disabled"
         assert panel._submit_btn.text() == "Submit"
         assert panel._tab_widget.tabText(0) == "Translation"
         assert panel._tab_widget.tabText(1) == "Custom Prompt"
@@ -202,13 +201,45 @@ class TestSidePanelTranslations:
         assert panel._translate_btn.text() == "翻訳"
         assert panel._explain_btn.text() == "解説付き翻訳"
         assert panel._export_btn.text() == "Markdown 保存"
-        assert panel._plotly_toggle_btn.toolTip() == (
-            "可視化可能な応答では Plotly JSON の出力を要求します"
-        )
+        assert panel._plotly_toggle_btn.text() == "📊"
+        assert panel._plotly_toggle_btn.toolTip() == "Plotly 可視化は無効です"
         assert panel._submit_btn.text() == "送信"
         assert panel._tab_widget.tabText(0) == "翻訳"
         assert panel._tab_widget.tabText(1) == "カスタムプロンプト"
         assert panel._cache_label.text() == "キャッシュステータス: ---"
+        panel.close()
+
+    def test_plotly_button_cycles_through_three_modes(self) -> None:
+        panel = SidePanelView(ui_language="en")
+        panel.apply_ui_texts(_TRANSLATIONS.build_side_panel_texts("en"))
+        observed: list[str] = []
+        panel.set_on_plotly_mode_changed(observed.append)
+
+        panel._plotly_toggle_btn.click()
+        panel._plotly_toggle_btn.click()
+        panel._plotly_toggle_btn.click()
+
+        assert observed == ["json", "python", "off"]
+        assert panel._plotly_toggle_btn.text() == "📊"
+        assert panel._plotly_toggle_btn.toolTip() == "Plotly visualization is disabled"
+        panel.close()
+
+    def test_plotly_mode_menu_action_updates_button(self) -> None:
+        panel = SidePanelView(ui_language="en")
+        panel.apply_ui_texts(_TRANSLATIONS.build_side_panel_texts("en"))
+
+        panel._plotly_mode_actions["python"].trigger()
+
+        assert panel._plotly_toggle_btn.text() == "📊 Py"
+        assert panel._plotly_toggle_btn.toolTip() == (
+            "Request sandboxed Plotly Python when the response can be visualized"
+        )
+
+        panel.set_plotly_mode("json")
+        assert panel._plotly_toggle_btn.text() == "📊 J"
+        assert panel._plotly_toggle_btn.toolTip() == (
+            "Request Plotly JSON when the response can be visualized"
+        )
         panel.close()
 
     def test_model_combo_stays_placeholder_until_selection(self) -> None:

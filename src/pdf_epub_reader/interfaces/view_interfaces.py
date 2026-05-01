@@ -263,10 +263,11 @@ class ISidePanelView(Protocol):
         ときに Presenter へ通知する。
         """
         ...
-    def set_on_plotly_toggled(
-        self, cb: Callable[[bool], None]
+    def set_on_plotly_mode_changed(
+        self,
+        cb: Callable[[Literal["off", "json", "python"]], None],
     ) -> None:
-        """Plotly 可視化トグルの切り替えコールバックを登録する。"""
+        """Plotly 可視化モード変更コールバックを登録する。"""
         ...
     def set_on_selection_delete_requested(
         self, cb: Callable[[str], None]
@@ -297,8 +298,11 @@ class ISidePanelView(Protocol):
         """
         ...
 
-    def set_plotly_toggle_checked(self, checked: bool) -> None:
-        """Plotly 可視化トグルのチェック状態を反映する。"""
+    def set_plotly_mode(
+        self,
+        mode: Literal["off", "json", "python"],
+    ) -> None:
+        """Plotly 可視化モードを UI に反映する。"""
         ...
 
     def set_on_model_changed(

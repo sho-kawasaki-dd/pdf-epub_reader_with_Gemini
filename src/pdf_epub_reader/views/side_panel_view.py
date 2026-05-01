@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QMenu,
     QScrollArea,
     QSplitter,
     QTabWidget,
@@ -47,6 +48,7 @@ from pdf_epub_reader.utils.config import DEFAULT_UI_LANGUAGE
 # タブインデックスと AnalysisMode.value の対応。
 # Presenter は文字列でモードを受け取るため、ここで変換する。
 _TAB_NAMES = {0: "translation", 1: "custom_prompt"}
+_PLOTLY_MODE_ORDER = ("off", "json", "python")
 
 
 def _get_katex_dir() -> Path:
@@ -362,7 +364,9 @@ class SidePanelView(QWidget):
         self._on_export_requested: Callable[[], None] | None = None
         self._on_tab_changed: Callable[[str], None] | None = None
         self._on_force_image_toggled: Callable[[bool], None] | None = None
-        self._on_plotly_toggled: Callable[[bool], None] | None = None
+        self._on_plotly_mode_changed: (
+            Callable[[str], None] | None
+        ) = None
         self._on_selection_delete_requested: (
             Callable[[str], None] | None
         ) = None
@@ -373,6 +377,7 @@ class SidePanelView(QWidget):
         self._cache_is_active: bool = False
         self._selection_snapshot = SelectionSnapshot()
         self._combined_selection_preview = ""
+        self._plotly_mode = "off"
 
         # Phase 7.5: カウントダウン状態
         self._on_cache_expired: Callable[[], None] | None = None
@@ -463,10 +468,27 @@ class SidePanelView(QWidget):
 
         action_row = QHBoxLayout()
         self._plotly_toggle_btn = QToolButton()
-        self._plotly_toggle_btn.setText("📊")
-        self._plotly_toggle_btn.setCheckable(True)
-        self._plotly_toggle_btn.setChecked(False)
-        self._plotly_toggle_btn.toggled.connect(self._fire_plotly_toggled)
+        self._plotly_toggle_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextOnly
+        )
+        self._plotly_toggle_btn.clicked.connect(self._cycle_plotly_mode)
+        self._plotly_toggle_btn.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self._plotly_toggle_btn.customContextMenuRequested.connect(
+            self._show_plotly_mode_menu
+        )
+        self._plotly_mode_menu = QMenu(self)
+        self._plotly_mode_actions: dict[str, object] = {}
+        for mode, label in (("off", "OFF"), ("json", "JSON"), ("python", "Python")):
+            action = self._plotly_mode_menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, selected_mode=mode: self._set_plotly_mode(
+                    selected_mode,
+                    emit=True,
+                )
+            )
+            self._plotly_mode_actions[mode] = action
         action_row.addWidget(self._plotly_toggle_btn)
         action_row.addStretch(1)
         ai_layout.addLayout(action_row)
@@ -561,6 +583,7 @@ class SidePanelView(QWidget):
 
         self._translation_result_has_content = False
         self._custom_result_has_content = False
+        self._apply_plotly_mode_visuals()
         self._refresh_selection_widgets()
 
     # --- ISidePanelView Display commands ---
@@ -640,7 +663,7 @@ class SidePanelView(QWidget):
         )
         self._force_image_checkbox.setText(self._text("selection_force_image_text"))
         self._ai_section.set_title(self._text("ai_section_title"))
-        self._plotly_toggle_btn.setToolTip(self._text("plotly_toggle_tooltip"))
+        self._apply_plotly_mode_visuals()
         self._translate_btn.setText(self._text("translation_button_text"))
         self._explain_btn.setText(self._text("translation_explain_button_text"))
         self._export_btn.setText(self._text("export_button_text"))
@@ -688,11 +711,11 @@ class SidePanelView(QWidget):
         """「画像としても送信」チェックボックスの切り替えコールバックを登録する。"""
         self._on_force_image_toggled = cb
 
-    def set_on_plotly_toggled(
-        self, cb: Callable[[bool], None]
+    def set_on_plotly_mode_changed(
+        self, cb: Callable[[str], None]
     ) -> None:
-        """Plotly 可視化トグルの切り替えコールバックを登録する。"""
-        self._on_plotly_toggled = cb
+        """Plotly 可視化モード変更コールバックを登録する。"""
+        self._on_plotly_mode_changed = cb
 
     def set_on_selection_delete_requested(
         self, cb: Callable[[str], None]
@@ -750,11 +773,9 @@ class SidePanelView(QWidget):
         self._model_combo.setEnabled(enabled and self._model_combo.count() > 0)
         self._sync_model_combo_placeholder()
 
-    def set_plotly_toggle_checked(self, checked: bool) -> None:
-        """Plotly 可視化トグルのチェック状態を反映する。"""
-        self._plotly_toggle_btn.blockSignals(True)
-        self._plotly_toggle_btn.setChecked(checked)
-        self._plotly_toggle_btn.blockSignals(False)
+    def set_plotly_mode(self, mode: str) -> None:
+        """Plotly 可視化モードを UI に反映する。"""
+        self._set_plotly_mode(mode, emit=False)
 
     # --- Phase 7: キャッシュ操作 ---
 
@@ -915,9 +936,44 @@ class SidePanelView(QWidget):
         if self._on_force_image_toggled:
             self._on_force_image_toggled(checked)
 
-    def _fire_plotly_toggled(self, checked: bool) -> None:
-        if self._on_plotly_toggled:
-            self._on_plotly_toggled(checked)
+    def _cycle_plotly_mode(self) -> None:
+        current_index = _PLOTLY_MODE_ORDER.index(self._plotly_mode)
+        next_mode = _PLOTLY_MODE_ORDER[(current_index + 1) % len(_PLOTLY_MODE_ORDER)]
+        self._set_plotly_mode(next_mode, emit=True)
+
+    def _show_plotly_mode_menu(self, position) -> None:
+        self._plotly_mode_menu.exec(self._plotly_toggle_btn.mapToGlobal(position))
+
+    def _set_plotly_mode(self, mode: str, *, emit: bool) -> None:
+        if mode not in _PLOTLY_MODE_ORDER:
+            mode = "off"
+        self._plotly_mode = mode
+        self._apply_plotly_mode_visuals()
+        if emit and self._on_plotly_mode_changed is not None:
+            self._on_plotly_mode_changed(mode)
+
+    def _apply_plotly_mode_visuals(self) -> None:
+        mode_text = "📊"
+        tool_tip = self._text("plotly_toggle_tooltip_off")
+        style = (
+            "QToolButton { background: #e5e7eb; color: #4b5563; border-radius: 6px; padding: 4px 10px; font-weight: bold; }"
+        )
+        if self._plotly_mode == "json":
+            mode_text = "📊 J"
+            tool_tip = self._text("plotly_toggle_tooltip_json")
+            style = (
+                "QToolButton { background: #dbeafe; color: #1d4ed8; border-radius: 6px; padding: 4px 10px; font-weight: bold; }"
+            )
+        elif self._plotly_mode == "python":
+            mode_text = "📊 Py"
+            tool_tip = self._text("plotly_toggle_tooltip_python")
+            style = (
+                "QToolButton { background: #dcfce7; color: #15803d; border-radius: 6px; padding: 4px 10px; font-weight: bold; }"
+            )
+
+        self._plotly_toggle_btn.setText(mode_text)
+        self._plotly_toggle_btn.setToolTip(tool_tip)
+        self._plotly_toggle_btn.setStyleSheet(style)
 
     def _fire_model_changed(self, model_name: str) -> None:
         """モデルプルダウンの変更をコールバックに変換する。"""

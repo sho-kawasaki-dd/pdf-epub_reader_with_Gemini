@@ -59,6 +59,7 @@ from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import (
     AppConfig,
     normalize_export_folder,
+    normalize_plotly_visualization_mode,
     save_config,
 )
 from pdf_epub_reader.utils.exceptions import (
@@ -177,8 +178,8 @@ class MainPresenter:
         self._panel_presenter.set_on_export_requested_handler(
             self._on_export_requested
         )
-        self._panel_presenter.set_on_plotly_toggle_changed_handler(
-            self._on_plotly_toggle_changed
+        self._panel_presenter.set_on_plotly_mode_changed_handler(
+            self._on_plotly_mode_changed
         )
         self._panel_presenter.set_on_plotly_render_handler(
             self._on_plotly_render
@@ -800,9 +801,11 @@ class MainPresenter:
 
         loop.create_task(_runner())
 
-    def _on_plotly_toggle_changed(self, checked: bool) -> None:
-        """サイドパネルの Plotly トグル変更を設定へ永続化する。"""
-        self._config.plotly_visualization_mode = "json" if checked else "off"
+    def _on_plotly_mode_changed(self, mode: str) -> None:
+        """サイドパネルの Plotly モード変更を設定へ永続化する。"""
+        self._config.plotly_visualization_mode = normalize_plotly_visualization_mode(
+            mode
+        )
         save_config(self._config)
 
     def _on_plotly_render(self, request: PlotlyRenderRequest) -> None:
