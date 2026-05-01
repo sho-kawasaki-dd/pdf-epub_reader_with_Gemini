@@ -13,7 +13,7 @@ from pdf_epub_reader.dto.ai_dto import (
     CacheStatus,
     ModelInfo,
 )
-from pdf_epub_reader.dto.plot_dto import PlotlySpec
+from pdf_epub_reader.dto.plot_dto import PlotlyRenderRequest, PlotlySpec
 from pdf_epub_reader.dto.document_dto import (
     DocumentInfo,
     PageData,
@@ -49,6 +49,7 @@ __all__ = [
     "MarkdownExportTexts",
     "ModelInfo",
     "PageData",
+    "PlotlyRenderRequest",
     "PlotlySpec",
     "PlotlyTexts",
     "RectCoords",

@@ -26,6 +26,7 @@ from pdf_epub_reader.dto import (
     AnalysisResult,
     CacheStatus,
     ModelInfo,
+    PlotlyRenderRequest,
     PlotlySpec,
     RectCoords,
     SelectionContent,
@@ -37,10 +38,29 @@ from pdf_epub_reader.interfaces.model_interfaces import IDocumentModel
 from pdf_epub_reader.interfaces.view_interfaces import IMainView, ISidePanelView
 from pdf_epub_reader.presenters.main_presenter import MainPresenter
 from pdf_epub_reader.presenters.panel_presenter import PanelPresenter
+from pdf_epub_reader.services.plotly_sandbox import SandboxStaticCheckError
 from pdf_epub_reader.utils.config import AppConfig
 
 
 from pdf_epub_reader.utils.exceptions import AIKeyMissingError
+
+
+class _StubSandboxExecutor:
+    def __init__(self, result: str | Exception) -> None:
+        self._result = result
+        self.calls: list[str] = []
+
+    def run(
+        self,
+        code: str,
+        *,
+        timeout_s: float,
+        cancel_token,
+    ) -> str:
+        self.calls.append(code)
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
 
 
 def _make_export_snapshot(text: str) -> SelectionSnapshot:
@@ -1821,14 +1841,17 @@ class TestPlotlyRenderFlow:
         )
 
         presenter._on_plotly_render(
-            [
+            PlotlyRenderRequest(
+                specs=[
                 PlotlySpec(
                     index=0,
                     language="json",
                     source_text='{"data": [], "layout": {}}',
                     title="Velocity Plot",
                 )
-            ]
+                ],
+                origin_mode="json",
+            )
         )
 
         assert len(created_windows) == 1
@@ -1867,7 +1890,8 @@ class TestPlotlyRenderFlow:
         )
 
         presenter._on_plotly_render(
-            [
+            PlotlyRenderRequest(
+                specs=[
                 PlotlySpec(
                     index=0,
                     language="json",
@@ -1880,7 +1904,9 @@ class TestPlotlyRenderFlow:
                     source_text='{"data": [], "layout": {}}',
                     title="Plot B",
                 ),
-            ]
+                ],
+                origin_mode="json",
+            )
         )
 
         picker_call = mock_main_view.get_calls("show_plotly_spec_picker")[-1]
@@ -1920,7 +1946,8 @@ class TestPlotlyRenderFlow:
         )
 
         presenter._on_plotly_render(
-            [
+            PlotlyRenderRequest(
+                specs=[
                 PlotlySpec(
                     index=0,
                     language="json",
@@ -1933,7 +1960,9 @@ class TestPlotlyRenderFlow:
                     source_text='{"data": [], "layout": {}}',
                     title="Second Plot",
                 ),
-            ]
+                ],
+                origin_mode="json",
+            )
         )
 
         assert mock_main_view.get_calls("show_plotly_spec_picker") == []
@@ -1966,17 +1995,159 @@ class TestPlotlyRenderFlow:
         )
 
         presenter._on_plotly_render(
-            [
+            PlotlyRenderRequest(
+                specs=[
                 PlotlySpec(
                     index=0,
                     language="json",
                     source_text="{broken",
                     title="Broken Plot",
                 )
-            ]
+                ],
+                origin_mode="json",
+            )
         )
 
         assert created_windows == []
         assert "The Plotly JSON is invalid:" in mock_main_view.get_calls(
             "show_status_message"
         )[-1][0]
+
+    @pytest.mark.asyncio
+    async def test_python_plotly_render_uses_sandbox_executor_and_running_ui(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        created_windows: list[MockPlotWindow] = []
+
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
+            created_windows.append(window)
+            return window
+
+        sandbox = _StubSandboxExecutor('{"data": [], "layout": {}}')
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+            sandbox_executor=sandbox,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="python",
+                        source_text="print(fig.to_json())",
+                        title="Python Plot",
+                    )
+                ],
+                origin_mode="python",
+            )
+        )
+
+        for _ in range(20):
+            if mock_main_view.get_calls("clear_plotly_running"):
+                break
+            await asyncio.sleep(0.01)
+
+        assert sandbox.calls == ["print(fig.to_json())"]
+        assert mock_main_view.get_calls("show_plotly_running") == [()]
+        assert mock_main_view.get_calls("clear_plotly_running") == [()]
+        assert len(created_windows) == 1
+        assert created_windows[0].calls[0][1] == "Plotly Visualization - Python Plot"
+
+    def test_python_origin_json_fallback_reports_status_before_render(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        created_windows: list[MockPlotWindow] = []
+
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
+            created_windows.append(window)
+            return window
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Fallback Plot",
+                    )
+                ],
+                origin_mode="python",
+            )
+        )
+
+        status_calls = mock_main_view.get_calls("show_status_message")
+        assert status_calls[0] == (
+            "No Python Plotly block was found. Falling back to Plotly JSON.",
+        )
+        assert status_calls[-1] == ("Opened Plotly visualization: Fallback Plot",)
+        assert len(created_windows) == 1
+
+    @pytest.mark.asyncio
+    async def test_python_plotly_static_check_error_maps_status(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel = PanelPresenter(view=mock_side_panel_view, ai_model=mock_ai_model)
+        sandbox = _StubSandboxExecutor(
+            SandboxStaticCheckError(["os"], Path("sandbox.log"))
+        )
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            sandbox_executor=sandbox,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="python",
+                        source_text="import os",
+                        title="Denied Plot",
+                    )
+                ],
+                origin_mode="python",
+            )
+        )
+
+        for _ in range(20):
+            if mock_main_view.get_calls("clear_plotly_running"):
+                break
+            await asyncio.sleep(0.01)
+
+        assert mock_main_view.get_calls("clear_plotly_running") == [()]
+        assert mock_main_view.get_calls("show_status_message")[-1] == (
+            "Plotly sandbox rejected the script: os",
+        )

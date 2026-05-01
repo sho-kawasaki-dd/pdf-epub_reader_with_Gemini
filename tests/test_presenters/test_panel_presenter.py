@@ -14,7 +14,12 @@ import pytest
 from tests.mocks.mock_models import MockAIModel
 from tests.mocks.mock_views import MockSidePanelView
 
-from pdf_epub_reader.dto import AnalysisMode, AnalysisResult, CacheStatus
+from pdf_epub_reader.dto import (
+    AnalysisMode,
+    AnalysisResult,
+    CacheStatus,
+    PlotlyRenderRequest,
+)
 from pdf_epub_reader.dto.document_dto import (
     RectCoords,
     SelectionContent,
@@ -392,7 +397,7 @@ class TestPlotlyRenderFlow:
                 ),
             )
         )
-        rendered: list[list] = []
+        rendered: list[PlotlyRenderRequest] = []
         panel_presenter.set_on_plotly_render_handler(rendered.append)
 
         await panel_presenter._do_translate(include_explanation=False)
@@ -424,7 +429,7 @@ class TestPlotlyRenderFlow:
                 ),
             )
         )
-        rendered: list[list] = []
+        rendered: list[PlotlyRenderRequest] = []
         panel_presenter.set_on_plotly_render_handler(rendered.append)
 
         await panel_presenter._do_translate(include_explanation=False)
@@ -432,9 +437,10 @@ class TestPlotlyRenderFlow:
         request = mock_ai_model.analyze.await_args.args[0]
         assert request.request_plotly_mode == "json"
         assert len(rendered) == 1
-        assert len(rendered[0]) == 1
-        assert rendered[0][0].title == "Velocity Plot"
-        assert panel_presenter._latest_plotly_specs == rendered[0]
+        assert rendered[0].origin_mode == "json"
+        assert len(rendered[0].specs) == 1
+        assert rendered[0].specs[0].title == "Velocity Plot"
+        assert panel_presenter._latest_plotly_specs == rendered[0].specs
 
     @pytest.mark.asyncio
     async def test_translate_with_python_plotly_mode_requests_python(
@@ -454,6 +460,67 @@ class TestPlotlyRenderFlow:
 
         request = mock_ai_model.analyze.await_args.args[0]
         assert request.request_plotly_mode == "python"
+
+    @pytest.mark.asyncio
+    async def test_python_mode_prefers_python_specs_over_json_specs(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        panel_presenter.set_plotly_mode("python")
+        mock_ai_model.analyze = AsyncMock(
+            return_value=AnalysisResult(
+                translated_text="done",
+                raw_response=(
+                    "## Python Plot\n\n"
+                    "```python\n"
+                    "print(fig.to_json())\n"
+                    "```\n\n"
+                    "```json\n"
+                    '{"data": [], "layout": {}}\n'
+                    "```"
+                ),
+            )
+        )
+        rendered: list[PlotlyRenderRequest] = []
+        panel_presenter.set_on_plotly_render_handler(rendered.append)
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        assert rendered[0].origin_mode == "python"
+        assert [spec.language for spec in rendered[0].specs] == ["python"]
+
+    @pytest.mark.asyncio
+    async def test_python_mode_falls_back_to_json_when_python_block_missing(
+        self,
+        panel_presenter: PanelPresenter,
+        mock_ai_model: MockAIModel,
+    ) -> None:
+        panel_presenter.set_selection_snapshot(
+            _make_snapshot(_make_slot(1, 0, "Hello world"))
+        )
+        panel_presenter.set_plotly_mode("python")
+        mock_ai_model.analyze = AsyncMock(
+            return_value=AnalysisResult(
+                translated_text="done",
+                raw_response=(
+                    "## Json Plot\n\n"
+                    "```json\n"
+                    '{"data": [], "layout": {}}\n'
+                    "```"
+                ),
+            )
+        )
+        rendered: list[PlotlyRenderRequest] = []
+        panel_presenter.set_on_plotly_render_handler(rendered.append)
+
+        await panel_presenter._do_translate(include_explanation=False)
+
+        assert rendered[0].origin_mode == "python"
+        assert [spec.language for spec in rendered[0].specs] == ["json"]
 
     @pytest.mark.asyncio
     async def test_ai_failure_resets_plotly_specs(

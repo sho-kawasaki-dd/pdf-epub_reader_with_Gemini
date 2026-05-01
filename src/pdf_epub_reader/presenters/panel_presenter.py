@@ -17,6 +17,7 @@ from pdf_epub_reader.dto import (
     AnalysisRequest,
     AnalysisResult,
     CacheStatus,
+    PlotlyRenderRequest,
     PlotlySpec,
     RectCoords,
     SelectionContent,
@@ -86,7 +87,7 @@ class PanelPresenter:
         self._on_export_requested_handler: Callable[[], None] | None = None
         self._on_plotly_toggle_changed_handler: Callable[[bool], None] | None = None
         self._on_plotly_render_handler: (
-            Callable[[list[PlotlySpec]], None] | None
+            Callable[[PlotlyRenderRequest], None] | None
         ) = None
         # Phase 7: キャッシュ状態と MainPresenter 向けコールバック
         self._cache_status = CacheStatus()
@@ -275,7 +276,7 @@ class PanelPresenter:
         self._on_plotly_toggle_changed_handler = cb
 
     def set_on_plotly_render_handler(
-        self, cb: Callable[[list[PlotlySpec]], None]
+        self, cb: Callable[[PlotlyRenderRequest], None]
     ) -> None:
         """MainPresenter が登録する Plotly 描画要求ハンドラ。"""
         self._on_plotly_render_handler = cb
@@ -636,13 +637,36 @@ class PanelPresenter:
             self._reset_plotly_specs()
             return
 
-        specs = extract_plotly_specs(result.raw_response)
-        self._latest_plotly_specs = specs
-        if specs and self._on_plotly_render_handler is not None:
-            self._on_plotly_render_handler(specs)
+        extracted_specs = extract_plotly_specs(result.raw_response)
+        selected_specs = self._select_plotly_specs_for_render(
+            extracted_specs,
+            request.request_plotly_mode,
+        )
+        self._latest_plotly_specs = selected_specs
+        if selected_specs and self._on_plotly_render_handler is not None:
+            self._on_plotly_render_handler(
+                PlotlyRenderRequest(
+                    specs=selected_specs,
+                    origin_mode=request.request_plotly_mode,
+                )
+            )
 
     def _reset_plotly_specs(self) -> None:
         self._latest_plotly_specs = []
+
+    @staticmethod
+    def _select_plotly_specs_for_render(
+        specs: list[PlotlySpec],
+        request_plotly_mode: str,
+    ) -> list[PlotlySpec]:
+        if request_plotly_mode == "json":
+            return [spec for spec in specs if spec.language == "json"]
+        if request_plotly_mode == "python":
+            python_specs = [spec for spec in specs if spec.language == "python"]
+            if python_specs:
+                return python_specs
+            return [spec for spec in specs if spec.language == "json"]
+        return []
 
     def _collect_images(self) -> list[bytes]:
         """現在の選択スナップショットから cropped_image を順序通り収集する。"""

@@ -36,8 +36,8 @@ class TestPlotlyExtractionService:
 
     def test_ignores_non_json_language_blocks(self) -> None:
         markdown = (
-            "```python\n"
-            "fig = px.line(x=[1, 2], y=[3, 4])\n"
+            "```text\n"
+            "not python or json\n"
             "```\n\n"
             "```text\n"
             "not json\n"
@@ -67,6 +67,24 @@ class TestPlotlyExtractionService:
         assert specs[1].title == "First Plot"
         assert '"name": "a"' in specs[0].source_text
         assert '"name": "b"' in specs[1].source_text
+
+    def test_extracts_python_blocks_and_preserves_mixed_order(self) -> None:
+        markdown = (
+            "## First Plot\n\n"
+            "```python\n"
+            "print(fig.to_json())\n"
+            "```\n\n"
+            "```json\n"
+            '{"data": [{"name": "b"}], "layout": {}}\n'
+            "```"
+        )
+
+        specs = extract_plotly_specs(markdown)
+
+        assert [spec.language for spec in specs] == ["python", "json"]
+        assert specs[0].title == "First Plot"
+        assert specs[1].title == "First Plot"
+        assert specs[0].source_text == "print(fig.to_json())"
 
     def test_returns_empty_list_for_empty_or_irrelevant_markdown(self) -> None:
         assert extract_plotly_specs("") == []

@@ -14,3 +14,11 @@ class PlotlySpec:
     language: Literal["json", "python"]
     source_text: str
     title: str | None = None
+
+
+@dataclass(frozen=True)
+class PlotlyRenderRequest:
+    """MainPresenter へ渡す Plotly 描画要求。"""
+
+    specs: list[PlotlySpec]
+    origin_mode: Literal["json", "python"]

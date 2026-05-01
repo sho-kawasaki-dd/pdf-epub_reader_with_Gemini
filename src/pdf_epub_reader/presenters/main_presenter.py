@@ -12,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
 from pdf_epub_reader.dto import (
     PageData,
+    PlotlyRenderRequest,
     PlotlySpec,
     RectCoords,
     SelectionSnapshot,
@@ -41,8 +43,18 @@ from pdf_epub_reader.services.markdown_export_service import (
 from pdf_epub_reader.services.plotly_render_service import (
     PlotlyRenderError,
     figure_to_html,
-    parse_spec,
+    render_spec,
 )
+from pdf_epub_reader.services.plotly_sandbox import (
+    SandboxCancelledError,
+    SandboxOutputError,
+    SandboxProvisioningError,
+    SandboxRuntimeError,
+    SandboxStaticCheckError,
+    SandboxTimeoutError,
+)
+from pdf_epub_reader.services.plotly_sandbox.cancel import CancelToken
+from pdf_epub_reader.services.plotly_sandbox.executor import SandboxExecutor
 from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.utils.config import (
     AppConfig,
@@ -81,6 +93,7 @@ class MainPresenter:
         ai_model: IAIModel | None = None,
         cache_dialog_view_factory: Callable[[str], ICacheDialogView] | None = None,
         plot_window_factory: Callable[[], _PlotWindowLike] | None = None,
+        sandbox_executor: SandboxExecutor | None = None,
     ) -> None:
         """依存オブジェクトを受け取り、View のイベントを購読する。
 
@@ -109,6 +122,9 @@ class MainPresenter:
         self._plot_window_factory = (
             plot_window_factory or self._build_plot_window
         )
+        self._sandbox_executor = sandbox_executor
+        self._plotly_worker_pool = ThreadPoolExecutor(max_workers=1)
+        self._active_plotly_cancel_token: CancelToken | None = None
         self._base_dpi: int = self._config.default_dpi
         dpr = self._view.get_device_pixel_ratio()
         self._render_dpi: int = int(self._base_dpi * dpr)
@@ -789,21 +805,43 @@ class MainPresenter:
         self._config.plotly_visualization_mode = "json" if checked else "off"
         save_config(self._config)
 
-    def _on_plotly_render(self, specs: list[PlotlySpec]) -> None:
+    def _on_plotly_render(self, request: PlotlyRenderRequest) -> None:
         """PanelPresenter から渡された Plotly spec を復元して表示する。"""
-        if not specs:
+        if not request.specs:
             return
 
         plotly_texts = self._translation_service.build_plotly_texts(
             self._config.ui_language
         )
-        selected = self._select_plotly_spec(specs, plotly_texts)
+        selected = self._select_plotly_spec(request.specs, plotly_texts)
         if selected is None:
             return
 
         title = self._resolve_plotly_spec_title(selected, plotly_texts)
+        if request.origin_mode == "python" and selected.language == "json":
+            self._view.show_status_message(
+                plotly_texts.sandbox_fallback_to_json_message
+            )
+
+        if selected.language == "python":
+            self._start_plotly_python_render(selected, title, plotly_texts)
+            return
+
+        self._render_and_show_plotly_figure(selected, title, plotly_texts)
+
+    def _render_and_show_plotly_figure(
+        self,
+        spec: PlotlySpec,
+        title: str,
+        plotly_texts,
+    ) -> None:
         try:
-            figure = parse_spec(selected)
+            figure = render_spec(
+                spec,
+                sandbox=None,
+                timeout_s=self._config.plotly_sandbox_timeout_s,
+                cancel_token=CancelToken(),
+            )
             html = figure_to_html(figure)
         except PlotlyRenderError as exc:
             self._view.show_status_message(
@@ -820,6 +858,100 @@ class MainPresenter:
         self._view.show_status_message(
             plotly_texts.render_success_message_template.format(title=title)
         )
+
+    def _start_plotly_python_render(
+        self,
+        spec: PlotlySpec,
+        title: str,
+        plotly_texts,
+    ) -> None:
+        cancel_token = CancelToken()
+        self._active_plotly_cancel_token = cancel_token
+        self._view.show_status_message(plotly_texts.sandbox_provisioning_message)
+        self._view.show_plotly_running(cancel_token.cancel)
+        self._run_plotly_render_coroutine(
+            self._render_plotly_python_async(
+                spec,
+                title,
+                plotly_texts,
+                cancel_token,
+            )
+        )
+
+    async def _render_plotly_python_async(
+        self,
+        spec: PlotlySpec,
+        title: str,
+        plotly_texts,
+        cancel_token: CancelToken,
+    ) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            figure = await loop.run_in_executor(
+                self._plotly_worker_pool,
+                lambda: render_spec(
+                    spec,
+                    sandbox=self._get_sandbox_executor(),
+                    timeout_s=self._config.plotly_sandbox_timeout_s,
+                    cancel_token=cancel_token,
+                ),
+            )
+            html = figure_to_html(figure)
+        except PlotlyRenderError as exc:
+            self._view.show_status_message(
+                self._build_plotly_render_error_message(exc, plotly_texts)
+            )
+            return
+        except SandboxTimeoutError:
+            self._view.show_status_message(plotly_texts.sandbox_timeout_message)
+            return
+        except SandboxCancelledError:
+            self._view.show_status_message(plotly_texts.sandbox_cancelled_message)
+            return
+        except SandboxStaticCheckError as exc:
+            self._view.show_status_message(
+                plotly_texts.sandbox_static_check_error_message.format(
+                    names=", ".join(exc.disallowed)
+                )
+            )
+            return
+        except (SandboxRuntimeError, SandboxOutputError):
+            self._view.show_status_message(
+                plotly_texts.sandbox_runtime_error_message
+            )
+            return
+        except SandboxProvisioningError as exc:
+            message = plotly_texts.sandbox_provisioning_failed_message
+            if "network" in str(exc).lower() or "offline" in str(exc).lower():
+                message = plotly_texts.sandbox_provisioning_failed_offline_message
+            self._view.show_status_message(message)
+            return
+        finally:
+            self._active_plotly_cancel_token = None
+            self._view.clear_plotly_running()
+
+        window = self._plot_window_factory()
+        self._plot_windows.append(window)
+        window.show_figure_html(
+            html,
+            plotly_texts.window_title_template.format(title=title),
+        )
+        self._view.show_status_message(
+            plotly_texts.render_success_message_template.format(title=title)
+        )
+
+    def _run_plotly_render_coroutine(self, coro: asyncio.Future | asyncio.coroutines) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(coro)
+            return
+        loop.create_task(coro)
+
+    def _get_sandbox_executor(self) -> SandboxExecutor:
+        if self._sandbox_executor is None:
+            self._sandbox_executor = SandboxExecutor()
+        return self._sandbox_executor
 
     def _show_open_error(self, details: str) -> None:
         self._view.show_error_dialog(

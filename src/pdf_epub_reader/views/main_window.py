@@ -109,6 +109,7 @@ class MainWindow(QMainWindow):
         self._bookmark_has_entries = False
         self._status_is_default = True
         self._window_title_is_default = True
+        self._plotly_cancel_callback: Callable[[], None] | None = None
 
         # Phase 5 で app.py から注入されるまでの互換用デフォルト。
         self._bookmark_panel = bookmark_panel or BookmarkPanelView(
@@ -259,6 +260,19 @@ class MainWindow(QMainWindow):
 
         self._status_label = QLabel("")
         status_bar.addWidget(self._status_label, stretch=1)
+        self._plotly_running_label = QLabel("")
+        self._plotly_running_label.hide()
+        status_bar.addPermanentWidget(self._plotly_running_label)
+        self._plotly_cancel_label = QLabel("")
+        self._plotly_cancel_label.setTextFormat(Qt.TextFormat.RichText)
+        self._plotly_cancel_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
+        self._plotly_cancel_label.linkActivated.connect(
+            self._handle_plotly_cancel_link
+        )
+        self._plotly_cancel_label.hide()
+        status_bar.addPermanentWidget(self._plotly_cancel_label)
         self._set_default_status_text()
 
     # =========================================================================
@@ -348,6 +362,20 @@ class MainWindow(QMainWindow):
         self._status_is_default = False
         self._status_label.setText(message)
 
+    def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
+        """Plotly sandbox 実行中の補助 UI を表示する。"""
+        self._plotly_cancel_callback = cancel_cb
+        self._plotly_running_label.setText("Plotly sandbox running")
+        self._plotly_running_label.show()
+        self._plotly_cancel_label.setText('<a href="#">Cancel</a>')
+        self._plotly_cancel_label.show()
+
+    def clear_plotly_running(self) -> None:
+        """Plotly sandbox 実行中の補助 UI を解除する。"""
+        self._plotly_cancel_callback = None
+        self._plotly_running_label.hide()
+        self._plotly_cancel_label.hide()
+
     def update_recent_files(self, files: list[str]) -> None:
         """最近のファイルリストを差し替えてメニューを再構築する。"""
         self._settings.setValue("recent_files", files[:MAX_RECENT_FILES])
@@ -364,6 +392,10 @@ class MainWindow(QMainWindow):
     def show_error_dialog(self, title: str, message: str) -> None:
         """重大エラー時にモーダルダイアログを表示する。"""
         QMessageBox.critical(self, title, message)
+
+    def _handle_plotly_cancel_link(self, _link: str) -> None:
+        if self._plotly_cancel_callback is not None:
+            self._plotly_cancel_callback()
 
     def show_password_dialog(self, title: str, message: str) -> str | None:
         """パスワード保護文書の入力ダイアログを表示する。"""

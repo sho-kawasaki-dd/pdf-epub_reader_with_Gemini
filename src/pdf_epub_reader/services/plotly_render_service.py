@@ -8,6 +8,8 @@ from plotly.graph_objects import Figure
 from plotly.io import from_json, to_html
 
 from pdf_epub_reader.dto import PlotlySpec
+from pdf_epub_reader.services.plotly_sandbox.cancel import CancelToken
+from pdf_epub_reader.services.plotly_sandbox.executor import SandboxExecutor
 
 
 class PlotlyRenderError(Exception):
@@ -28,27 +30,56 @@ class PlotlyRenderError(Exception):
 
 def parse_spec(spec: PlotlySpec) -> Figure:
     """抽出済み Plotly spec を Figure に復元する。"""
+    return _figure_from_json_text(spec.source_text, spec_index=spec.index)
+
+
+def render_spec(
+    spec: PlotlySpec,
+    *,
+    sandbox: SandboxExecutor | None,
+    timeout_s: float,
+    cancel_token: CancelToken,
+) -> Figure:
+    """Plotly spec の言語に応じて Figure を復元する。"""
+    if spec.language == "python":
+        if sandbox is None:
+            raise PlotlyRenderError(
+                "restore_failed",
+                "Sandbox executor is required for Plotly Python specs.",
+                spec_index=spec.index,
+            )
+        json_payload = sandbox.run(
+            spec.source_text,
+            timeout_s=timeout_s,
+            cancel_token=cancel_token,
+        )
+        return _figure_from_json_text(json_payload, spec_index=spec.index)
+    return parse_spec(spec)
+
+
+def _figure_from_json_text(source_text: str, *, spec_index: int | None) -> Figure:
+    """JSON 文字列を Plotly Figure に復元する。"""
     try:
-        payload = json.loads(spec.source_text)
+        payload = json.loads(source_text)
     except json.JSONDecodeError as exc:
         raise PlotlyRenderError(
             "invalid_json",
             f"{exc.msg} (line {exc.lineno}, column {exc.colno})",
-            spec_index=spec.index,
+            spec_index=spec_index,
         ) from exc
 
     if not isinstance(payload, dict):
         raise PlotlyRenderError(
             "invalid_spec",
             "Plotly spec must be a JSON object.",
-            spec_index=spec.index,
+            spec_index=spec_index,
         )
 
     if "data" not in payload and "layout" not in payload:
         raise PlotlyRenderError(
             "invalid_spec",
             "Plotly spec must include at least one of 'data' or 'layout'.",
-            spec_index=spec.index,
+            spec_index=spec_index,
         )
 
     try:
@@ -57,7 +88,7 @@ def parse_spec(spec: PlotlySpec) -> Figure:
         raise PlotlyRenderError(
             "restore_failed",
             str(exc),
-            spec_index=spec.index,
+            spec_index=spec_index,
         ) from exc
 
 

@@ -118,6 +118,14 @@ class IMainView(Protocol):
         """複数 Plotly spec から 1 件を選ばせ、選択 index を返す。"""
         ...
 
+    def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
+        """Plotly sandbox 実行中のステータス UI を表示する。"""
+        ...
+
+    def clear_plotly_running(self) -> None:
+        """Plotly sandbox 実行中のステータス UI を解除する。"""
+        ...
+
     # --- Callback registration (View → Presenter) ---
     # View は Presenter を直接知らないため、イベント発生時に呼ぶ関数だけを
     # 事前登録してもらう。この形にすると Passive View を保ちやすい。

@@ -13,18 +13,19 @@ _FENCED_BLOCK_PATTERN = re.compile(
 
 
 def extract_plotly_specs(markdown_text: str) -> list[PlotlySpec]:
-    """Markdown 応答から Plotly JSON fenced block を順序通り抽出する。"""
+    """Markdown 応答から Plotly fenced block を順序通り抽出する。"""
     specs: list[PlotlySpec] = []
     for match in _FENCED_BLOCK_PATTERN.finditer(markdown_text):
         language = match.group("lang").strip().lower()
         source_text = match.group("body").strip()
-        if not _is_plotly_json_block(language, source_text):
+        plotly_language = _classify_plotly_block(language, source_text)
+        if plotly_language is None:
             continue
 
         specs.append(
             PlotlySpec(
                 index=len(specs),
-                language="json",
+                language=plotly_language,
                 source_text=source_text,
                 title=_infer_title(markdown_text[: match.start()]),
             )
@@ -33,12 +34,19 @@ def extract_plotly_specs(markdown_text: str) -> list[PlotlySpec]:
     return specs
 
 
-def _is_plotly_json_block(language: str, source_text: str) -> bool:
+def _classify_plotly_block(
+    language: str,
+    source_text: str,
+) -> str | None:
+    if language == "python":
+        return "python"
     if language == "json":
-        return True
+        return "json"
     if language:
-        return False
-    return source_text.startswith("{")
+        return None
+    if source_text.startswith("{"):
+        return "json"
+    return None
 
 
 def _infer_title(prefix_text: str) -> str | None:
