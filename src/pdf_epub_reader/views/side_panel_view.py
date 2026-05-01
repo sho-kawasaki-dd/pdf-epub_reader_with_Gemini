@@ -937,14 +937,17 @@ class SidePanelView(QWidget):
             self._on_force_image_toggled(checked)
 
     def _cycle_plotly_mode(self) -> None:
+        """Plotly トグルを OFF -> JSON -> Python の順で循環させる。"""
         current_index = _PLOTLY_MODE_ORDER.index(self._plotly_mode)
         next_mode = _PLOTLY_MODE_ORDER[(current_index + 1) % len(_PLOTLY_MODE_ORDER)]
         self._set_plotly_mode(next_mode, emit=True)
 
     def _show_plotly_mode_menu(self, position) -> None:
+        """右クリック位置に Plotly モード選択メニューを表示する。"""
         self._plotly_mode_menu.exec(self._plotly_toggle_btn.mapToGlobal(position))
 
     def _set_plotly_mode(self, mode: str, *, emit: bool) -> None:
+        """内部状態を更新し、必要なら Presenter へ変更通知する。"""
         if mode not in _PLOTLY_MODE_ORDER:
             mode = "off"
         self._plotly_mode = mode
@@ -953,18 +956,21 @@ class SidePanelView(QWidget):
             self._on_plotly_mode_changed(mode)
 
     def _apply_plotly_mode_visuals(self) -> None:
+        """現在モードに応じてトグルの見た目と tooltip を切り替える。"""
         mode_text = "📊"
         tool_tip = self._text("plotly_toggle_tooltip_off")
         style = (
             "QToolButton { background: #e5e7eb; color: #4b5563; border-radius: 6px; padding: 4px 10px; font-weight: bold; }"
         )
         if self._plotly_mode == "json":
+            # JSON モードは Phase 1 の従来挙動に近いことを青系で表現する。
             mode_text = "📊 J"
             tool_tip = self._text("plotly_toggle_tooltip_json")
             style = (
                 "QToolButton { background: #dbeafe; color: #1d4ed8; border-radius: 6px; padding: 4px 10px; font-weight: bold; }"
             )
         elif self._plotly_mode == "python":
+            # Python モードは sandbox 実行が入るため、別系統の緑で区別する。
             mode_text = "📊 Py"
             tool_tip = self._text("plotly_toggle_tooltip_python")
             style = (

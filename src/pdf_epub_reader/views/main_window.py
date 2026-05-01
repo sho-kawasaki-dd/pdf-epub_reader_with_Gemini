@@ -363,7 +363,11 @@ class MainWindow(QMainWindow):
         self._status_label.setText(message)
 
     def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
-        """Plotly sandbox 実行中の補助 UI を表示する。"""
+        """Plotly sandbox 実行中の補助 UI を表示する。
+
+        status bar には常駐メッセージとは別に、進行中ラベルと Cancel リンクを
+        出し、Python モードの長めの処理にだけ補助 UI を重ねる。
+        """
         self._plotly_cancel_callback = cancel_cb
         self._plotly_running_label.setText("Plotly sandbox running")
         self._plotly_running_label.show()

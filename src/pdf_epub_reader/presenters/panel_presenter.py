@@ -281,7 +281,11 @@ class PanelPresenter:
         self._on_plotly_render_handler = cb
 
     def set_plotly_mode(self, mode: str) -> None:
-        """Plotly mode を保持しつつ、現行の boolean UI へ反映する。"""
+        """Plotly mode を保持しつつ、サイドパネル UI へ反映する。
+
+        もともとは Phase 1 の boolean トグルだったが、Phase 2 で 3 状態化した。
+        Presenter 側は常に正規化済みモードを保持し、View にはそのまま渡す。
+        """
         normalized = normalize_plotly_visualization_mode(mode)
         self._plotly_mode = normalized
         self._view.set_plotly_mode(normalized)
@@ -618,11 +622,17 @@ class PanelPresenter:
         request: AnalysisRequest,
         result: AnalysisResult,
     ) -> None:
+        """AI 応答から Plotly spec を抽出し、描画要求へ変換する。
+
+        `request_plotly_mode` は送信時点のスナップショットなので、応答待ち中に
+        UI 側のモードが切り替わっても、この処理は元の要求に従って判定する。
+        """
         if request.request_plotly_mode == "off":
             self._reset_plotly_specs()
             return
 
         extracted_specs = extract_plotly_specs(result.raw_response)
+        # Python モード時は python spec を優先し、無ければ JSON fallback を使う。
         selected_specs = self._select_plotly_specs_for_render(
             extracted_specs,
             request.request_plotly_mode,
@@ -637,6 +647,7 @@ class PanelPresenter:
             )
 
     def _reset_plotly_specs(self) -> None:
+        """直近の Plotly 抽出結果を破棄する。"""
         self._latest_plotly_specs = []
 
     @staticmethod
@@ -644,12 +655,14 @@ class PanelPresenter:
         specs: list[PlotlySpec],
         request_plotly_mode: str,
     ) -> list[PlotlySpec]:
+        """要求モードに応じて描画対象 spec を絞り込む。"""
         if request_plotly_mode == "json":
             return [spec for spec in specs if spec.language == "json"]
         if request_plotly_mode == "python":
             python_specs = [spec for spec in specs if spec.language == "python"]
             if python_specs:
                 return python_specs
+            # Python ブロックが無い応答でも、JSON があれば描画まで進める。
             return [spec for spec in specs if spec.language == "json"]
         return []
 

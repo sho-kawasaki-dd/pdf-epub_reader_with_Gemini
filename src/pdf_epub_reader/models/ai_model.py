@@ -643,10 +643,13 @@ class AIModel:
             )
 
         if request.request_plotly_mode == "json":
+            # Phase 1 互換の JSON-only 指示を追加する。
             prompt_header = (
                 f"{prompt_header}\n\n{_PLOTLY_JSON_REQUEST_INSTRUCTION}"
             )
         elif request.request_plotly_mode == "python":
+            # Phase 2 では Python スクリプト生成を要求し、runner 側は
+            # 末尾の `print(fig.to_json())` 出力を stdout から拾う。
             prompt_header = (
                 f"{prompt_header}\n\n{_PLOTLY_PYTHON_REQUEST_INSTRUCTION}"
             )

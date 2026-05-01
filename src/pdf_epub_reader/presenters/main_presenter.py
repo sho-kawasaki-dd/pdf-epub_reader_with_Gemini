@@ -788,6 +788,7 @@ class MainPresenter:
         *,
         status_message: str | None = None,
     ) -> None:
+        """設定変更を async 文脈へ安全に流し込む。"""
         async def _runner() -> None:
             await self._apply_config_changes(new_config)
             if status_message is not None:
@@ -809,7 +810,12 @@ class MainPresenter:
         save_config(self._config)
 
     def _on_plotly_render(self, request: PlotlyRenderRequest) -> None:
-        """PanelPresenter から渡された Plotly spec を復元して表示する。"""
+        """PanelPresenter から渡された Plotly spec を復元して表示する。
+
+        Phase 1 では JSON spec を即時描画し、複数 spec は設定に応じて選択する。
+        Phase 2 では同じ入口から Python spec も受け取り、必要時だけ sandbox
+        実行へ分岐する。
+        """
         if not request.specs:
             return
 
@@ -822,6 +828,7 @@ class MainPresenter:
 
         title = self._resolve_plotly_spec_title(selected, plotly_texts)
         if request.origin_mode == "python" and selected.language == "json":
+            # Python モード送信でも python block が無かった場合の fallback 通知。
             self._view.show_status_message(
                 plotly_texts.sandbox_fallback_to_json_message
             )
@@ -838,6 +845,7 @@ class MainPresenter:
         title: str,
         plotly_texts,
     ) -> None:
+        """JSON spec を同期復元し、PlotWindow へ表示する。"""
         try:
             figure = render_spec(
                 spec,
@@ -868,8 +876,10 @@ class MainPresenter:
         title: str,
         plotly_texts,
     ) -> None:
+        """Python spec の sandbox 描画を非同期で開始する。"""
         cancel_token = CancelToken()
         self._active_plotly_cancel_token = cancel_token
+        # 初回は venv 準備が走る可能性があるため、開始直後に進捗 UI を出す。
         self._view.show_status_message(plotly_texts.sandbox_provisioning_message)
         self._view.show_plotly_running(cancel_token.cancel)
         self._run_plotly_render_coroutine(
@@ -888,6 +898,7 @@ class MainPresenter:
         plotly_texts,
         cancel_token: CancelToken,
     ) -> None:
+        """QThreadPool 上で sandbox 描画を実行し、結果を UI に反映する。"""
         try:
             loop = asyncio.get_running_loop()
             figure = await loop.run_in_executor(
@@ -906,12 +917,14 @@ class MainPresenter:
             )
             return
         except SandboxTimeoutError:
+            # AI 応答自体は残しつつ、図だけを諦める。
             self._view.show_status_message(plotly_texts.sandbox_timeout_message)
             return
         except SandboxCancelledError:
             self._view.show_status_message(plotly_texts.sandbox_cancelled_message)
             return
         except SandboxStaticCheckError as exc:
+            # 禁止 import 名や builtin 名をそのまま UI へ返せるようにしている。
             self._view.show_status_message(
                 plotly_texts.sandbox_static_check_error_message.format(
                     names=", ".join(exc.disallowed)
@@ -944,6 +957,7 @@ class MainPresenter:
         )
 
     def _run_plotly_render_coroutine(self, coro: asyncio.Future | asyncio.coroutines) -> None:
+        """イベントループの有無に応じて Plotly 描画 coroutine を起動する。"""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -952,6 +966,7 @@ class MainPresenter:
         loop.create_task(coro)
 
     def _get_sandbox_executor(self) -> SandboxExecutor:
+        """SandboxExecutor を遅延初期化して再利用する。"""
         if self._sandbox_executor is None:
             self._sandbox_executor = SandboxExecutor()
         return self._sandbox_executor
@@ -980,9 +995,11 @@ class MainPresenter:
         specs: list[PlotlySpec],
         plotly_texts,
     ) -> PlotlySpec | None:
+        """複数 Plotly spec から表示対象を 1 件選ぶ。"""
         if len(specs) == 1 or self._config.plotly_multi_spec_mode == "first_only":
             return specs[0]
 
+        # `prompt` モードでは View に選択ダイアログを委譲する。
         labels = [
             self._resolve_plotly_spec_title(spec, plotly_texts)
             for spec in specs
@@ -1000,6 +1017,7 @@ class MainPresenter:
         return specs[selected_index]
 
     def _resolve_plotly_spec_title(self, spec: PlotlySpec, plotly_texts) -> str:
+        """spec からウィンドウ表示用タイトルを解決する。"""
         if spec.title:
             return spec.title
         return plotly_texts.spec_fallback_title_template.format(

@@ -43,6 +43,9 @@ class AnalysisRequest:
     images: list[bytes] = field(default_factory=list)
     model_name: str | None = None
     cache_name: str | None = None
+    # Phase 2: Plotly 可視化要求。
+    # `off` は抽出自体を行わず、`json` は fenced JSON を優先、
+    # `python` は fenced Python を優先し、無ければ JSON fallback を許可する。
     request_plotly_mode: Literal["off", "json", "python"] = "off"
 
 

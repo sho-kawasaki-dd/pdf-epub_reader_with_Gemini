@@ -159,6 +159,7 @@ def normalize_plotly_visualization_mode(
 ) -> PlotlyVisualizationMode:
     """Plotly 可視化モードを既知の値へ正規化する。"""
     if value is True:
+        # 旧 bool 設定との後方互換。True は従来の JSON 表示に相当する。
         return "json"
     if value in {"json", "python"}:
         return value
@@ -265,12 +266,15 @@ class AppConfig:
     )
 
     # Phase 9: Plotly visualization 設定
+    # モード自体はサイドパネルで切り替えるが、永続化は config が担う。
     plotly_visualization_mode: PlotlyVisualizationMode = (
         DEFAULT_PLOTLY_VISUALIZATION_MODE
     )
+    # 複数 spec を返した場合に選択ダイアログを出すか、先頭だけ使うかを制御する。
     plotly_multi_spec_mode: PlotlyMultiSpecMode = (
         DEFAULT_PLOTLY_MULTI_SPEC_MODE
     )
+    # Python sandbox 実行の timeout と stderr ログ保存先。
     plotly_sandbox_timeout_s: float = DEFAULT_PLOTLY_SANDBOX_TIMEOUT_S
     plotly_sandbox_log_dir: str | None = None
 
@@ -330,6 +334,7 @@ def load_config(path: Path | None = None) -> AppConfig:
             "plotly_visualization_mode" not in data
             and "plotly_visualization_enabled" in data
         ):
+            # Phase 1 の bool 設定を Phase 2 の 3 状態モードへ移行する。
             data["plotly_visualization_mode"] = normalize_plotly_visualization_mode(
                 data.get("plotly_visualization_enabled")
             )

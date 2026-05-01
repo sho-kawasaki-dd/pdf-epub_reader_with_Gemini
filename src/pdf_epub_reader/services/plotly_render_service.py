@@ -40,7 +40,11 @@ def render_spec(
     timeout_s: float,
     cancel_token: CancelToken,
 ) -> Figure:
-    """Plotly spec の言語に応じて Figure を復元する。"""
+    """Plotly spec の言語に応じて Figure を復元する。
+
+    JSON はそのまま `from_json` 系の復元へ流し、Python は sandbox 実行で
+    JSON を得てから同じ復元経路に合流させる。
+    """
     if spec.language == "python":
         if sandbox is None:
             raise PlotlyRenderError(
@@ -48,6 +52,7 @@ def render_spec(
                 "Sandbox executor is required for Plotly Python specs.",
                 spec_index=spec.index,
             )
+        # runner の stdout から抽出した JSON を通常の復元経路に載せる。
         json_payload = sandbox.run(
             spec.source_text,
             timeout_s=timeout_s,
@@ -75,6 +80,7 @@ def _figure_from_json_text(source_text: str, *, spec_index: int | None) -> Figur
             spec_index=spec_index,
         )
 
+    # Plotly の Figure JSON として最低限の形を満たすかを先に確認する。
     if "data" not in payload and "layout" not in payload:
         raise PlotlyRenderError(
             "invalid_spec",

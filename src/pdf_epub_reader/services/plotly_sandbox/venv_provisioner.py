@@ -1,4 +1,9 @@
-"""Provision and validate the dedicated Plotly sandbox virtual environment."""
+"""Plotly sandbox 専用 venv を作成・検証するプロビジョナ。
+
+この層は「隔離そのもの」ではなく、allow-list で許可した依存を安全に
+供給するための専用環境を維持する責務を持つ。manifest を併用して、
+schema や Python バージョンの不一致時には丸ごと再構築する。
+"""
 
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class SandboxVenvProvisioner:
-    """Create and maintain the dedicated venv used for sandboxed Plotly code."""
+    """sandboxed Plotly 実行に使う専用 venv を作成・保守する。"""
 
     def __init__(self, venv_dir: Path | None = None) -> None:
         if venv_dir is None:
@@ -36,12 +41,17 @@ class SandboxVenvProvisioner:
         self,
         progress_cb: Callable[[str], None] | None = None,
     ) -> Path:
-        """Return the sandbox Python executable, creating or repairing the venv as needed."""
+        """sandbox Python 実行ファイルを返し、必要なら venv を再構築する。
+
+        既存環境が使える場合はそのまま再利用し、manifest 不一致や import
+        probe 失敗時だけ最小限の修復または再作成を行う。
+        """
         python_path = self._python_path(self._venv_dir)
 
         if self._needs_rebuild(python_path):
             self._rebuild_environment(progress_cb)
         elif not self._probe_required_imports(python_path):
+            # venv 自体は残っていても、依存だけ壊れているケースをここで補修する。
             self._notify(progress_cb, "Installing sandbox packages...")
             self._install_packages(python_path)
             self._write_manifest()
@@ -53,6 +63,7 @@ class SandboxVenvProvisioner:
         return python_path
 
     def _needs_rebuild(self, python_path: Path) -> bool:
+        """manifest や実行ファイルの有無から再構築の必要性を判定する。"""
         if not self._venv_dir.exists():
             return True
         if not python_path.exists():
@@ -63,6 +74,7 @@ class SandboxVenvProvisioner:
         self,
         progress_cb: Callable[[str], None] | None = None,
     ) -> None:
+        """既存 venv を破棄して、クリーンな sandbox 環境を再作成する。"""
         self._notify(progress_cb, "Creating sandbox virtual environment...")
         try:
             if self._venv_dir.exists():
@@ -82,12 +94,14 @@ class SandboxVenvProvisioner:
         self._write_manifest()
 
     def _upgrade_pip(self, python_path: Path) -> None:
+        """sandbox venv 内の pip を更新する。"""
         self._run_checked(
             [str(python_path), "-m", "pip", "install", "--upgrade", "pip"],
             "Failed to upgrade sandbox pip.",
         )
 
     def _install_packages(self, python_path: Path) -> None:
+        """allow-list に含まれる外部依存を一括インストールする。"""
         self._run_checked(
             [
                 str(python_path),
@@ -100,6 +114,7 @@ class SandboxVenvProvisioner:
         )
 
     def _probe_required_imports(self, python_path: Path) -> bool:
+        """必要依存が import 可能かを軽量な subprocess で確認する。"""
         command = [
             str(python_path),
             "-c",
@@ -119,6 +134,7 @@ class SandboxVenvProvisioner:
         return result.returncode == 0
 
     def _run_checked(self, command: list[str], message: str) -> None:
+        """失敗時に `SandboxProvisioningError` を送出する subprocess 実行ヘルパ。"""
         try:
             subprocess.run(
                 command,
@@ -129,10 +145,12 @@ class SandboxVenvProvisioner:
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             if stderr:
+                # 詳細はログへ残し、上位には抽象化した provisioning error を返す。
                 logger.warning("%s stderr=%s", message, stderr)
             raise SandboxProvisioningError(message) from exc
 
     def _has_compatible_manifest(self) -> bool:
+        """既存 manifest が現在の schema / Python / allow-list と一致するかを見る。"""
         manifest_path = self._venv_dir / SANDBOX_MANIFEST_NAME
         if not manifest_path.exists():
             return False
@@ -145,6 +163,7 @@ class SandboxVenvProvisioner:
         return payload == self._build_manifest_payload()
 
     def _write_manifest(self) -> None:
+        """現在の venv 構成を manifest として保存する。"""
         manifest_path = self._venv_dir / SANDBOX_MANIFEST_NAME
         manifest_path.write_text(
             json.dumps(self._build_manifest_payload(), ensure_ascii=False, indent=2),
@@ -152,6 +171,7 @@ class SandboxVenvProvisioner:
         )
 
     def _build_manifest_payload(self) -> dict[str, object]:
+        """互換性判定に使う manifest ペイロードを構築する。"""
         return {
             "schema_version": SANDBOX_MANIFEST_SCHEMA_VERSION,
             "python_version": ".".join(str(part) for part in sys.version_info[:3]),
@@ -163,11 +183,13 @@ class SandboxVenvProvisioner:
         progress_cb: Callable[[str], None] | None,
         message: str,
     ) -> None:
+        """進捗通知コールバックがある場合だけメッセージを転送する。"""
         if progress_cb is not None:
             progress_cb(message)
 
     @staticmethod
     def _python_path(venv_dir: Path) -> Path:
+        """OS ごとの差分を吸収して venv 内 Python のパスを返す。"""
         if sys.platform.startswith("win"):
             return venv_dir / "Scripts" / "python.exe"
         return venv_dir / "bin" / "python"
