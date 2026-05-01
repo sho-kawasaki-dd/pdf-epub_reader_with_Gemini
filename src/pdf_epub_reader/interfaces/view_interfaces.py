@@ -118,6 +118,19 @@ class IMainView(Protocol):
         """複数 Plotly spec から 1 件を選ばせ、選択 index を返す。"""
         ...
 
+    def show_running_operation(
+        self,
+        message: str,
+        cancel_cb: Callable[[], None],
+        cancel_text: str,
+    ) -> None:
+        """ステータスバーで汎用の進行中操作 UI を表示する。"""
+        ...
+
+    def clear_running_operation(self) -> None:
+        """汎用の進行中操作 UI を解除する。"""
+        ...
+
     def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
         """Plotly sandbox 実行中のステータス UI を表示する。"""
         ...

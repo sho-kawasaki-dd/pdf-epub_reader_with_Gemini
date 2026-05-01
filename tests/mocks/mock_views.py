@@ -54,7 +54,7 @@ class MockMainView:
         self._on_pages_needed: Callable[[list[int]], None] | None = None
         self._on_settings_requested: Callable[[], None] | None = None
         self._on_language_settings_requested: Callable[[], None] | None = None
-        self._plotly_cancel_callback: Callable[[], None] | None = None
+        self._running_operation_cancel_callback: Callable[[], None] | None = None
 
         # get_current_page が返す固定値。テストで変更可能。
         self._current_page: int = 0
@@ -136,12 +136,31 @@ class MockMainView:
         )
         return self._plotly_picker_return
 
+    def show_running_operation(
+        self,
+        message: str,
+        cancel_cb: Callable[[], None],
+        cancel_text: str,
+    ) -> None:
+        self._running_operation_cancel_callback = cancel_cb
+        self.calls.append(
+            ("show_running_operation", (message, cancel_text))
+        )
+
+    def clear_running_operation(self) -> None:
+        self._running_operation_cancel_callback = None
+        self.calls.append(("clear_running_operation", ()))
+
     def show_plotly_running(self, cancel_cb: Callable[[], None]) -> None:
-        self._plotly_cancel_callback = cancel_cb
+        self.show_running_operation(
+            "Plotly sandbox running",
+            cancel_cb,
+            "Cancel",
+        )
         self.calls.append(("show_plotly_running", ()))
 
     def clear_plotly_running(self) -> None:
-        self._plotly_cancel_callback = None
+        self.clear_running_operation()
         self.calls.append(("clear_plotly_running", ()))
 
     # --- Callback registration ---
@@ -243,8 +262,8 @@ class MockMainView:
             self._on_language_settings_requested()
 
     def simulate_plotly_cancel_clicked(self) -> None:
-        if self._plotly_cancel_callback is not None:
-            self._plotly_cancel_callback()
+        if self._running_operation_cancel_callback is not None:
+            self._running_operation_cancel_callback()
 
     # --- Helpers ---
 

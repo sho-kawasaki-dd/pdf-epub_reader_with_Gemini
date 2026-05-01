@@ -178,6 +178,42 @@ class TestMainWindowTranslations:
         bookmark_panel.close()
         side_panel.close()
 
+    def test_running_operation_ui_uses_generic_status_surface(self) -> None:
+        bookmark_panel = BookmarkPanelView(ui_language="en")
+        side_panel = QWidget()
+        window = MainWindow(
+            side_panel=side_panel,
+            bookmark_panel=bookmark_panel,
+            ui_language="en",
+        )
+
+        observed: list[str] = []
+
+        window.show_running_operation(
+            "Running Gemini request...",
+            lambda: observed.append("cancelled"),
+            "Cancel",
+        )
+        assert window._running_operation_label.text() == "Running Gemini request..."
+        assert window._running_operation_cancel_label.text() == '<a href="#">Cancel</a>'
+        window._handle_running_operation_cancel_link("#")
+        assert observed == ["cancelled"]
+
+        window.clear_running_operation()
+        assert not window._running_operation_label.isVisible()
+        assert not window._running_operation_cancel_label.isVisible()
+
+        window.show_plotly_running(observed.append)
+        assert window._running_operation_label.text() == "Plotly sandbox running"
+        assert window._running_operation_cancel_label.text() == '<a href="#">Cancel</a>'
+        window.clear_plotly_running()
+        assert not window._running_operation_label.isVisible()
+        assert not window._running_operation_cancel_label.isVisible()
+
+        window.close()
+        bookmark_panel.close()
+        side_panel.close()
+
 
 class TestSidePanelTranslations:
     def test_language_application_updates_static_strings(self) -> None:
