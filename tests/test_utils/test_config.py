@@ -124,26 +124,26 @@ class TestPlotlyVisualizationConfig:
         config = AppConfig()
 
         assert config.plotly_visualization_mode == "off"
-        assert config.plotly_multi_spec_mode == "prompt"
+        assert config.plotly_multi_spec_mode == "all_tabs"
         assert config.plotly_sandbox_timeout_s == 10.0
 
     def test_plotly_fields_round_trip_and_mode_is_normalized(self, tmp_path) -> None:
         config_path = tmp_path / "config.json"
         config = AppConfig(
             plotly_visualization_mode="json",
-            plotly_multi_spec_mode="first_only",
+            plotly_multi_spec_mode="all_tabs",
         )
 
         save_config(config, config_path)
         loaded = load_config(config_path)
 
         assert loaded.plotly_visualization_mode == "json"
-        assert loaded.plotly_multi_spec_mode == "first_only"
+        assert loaded.plotly_multi_spec_mode == "all_tabs"
 
     def test_invalid_plotly_mode_falls_back_to_prompt(self) -> None:
         config = AppConfig(plotly_multi_spec_mode="invalid")
 
-        assert config.plotly_multi_spec_mode == "prompt"
+        assert config.plotly_multi_spec_mode == "all_tabs"
 
     def test_legacy_plotly_enabled_true_migrates_to_json_mode(self, tmp_path) -> None:
         config_path = tmp_path / "config.json"

@@ -82,7 +82,9 @@ DEFAULT_EXPORT_INCLUDE_YAML_FRONTMATTER = False
 
 # --- Plotly visualization デフォルト設定 ---
 DEFAULT_PLOTLY_VISUALIZATION_MODE: Literal["off", "json", "python"] = "off"
-DEFAULT_PLOTLY_MULTI_SPEC_MODE: Literal["prompt", "first_only"] = "prompt"
+DEFAULT_PLOTLY_MULTI_SPEC_MODE: Literal["prompt", "first_only", "all_tabs"] = (
+    "all_tabs"
+)
 DEFAULT_PLOTLY_SANDBOX_TIMEOUT_S = 10.0
 PLOTLY_SANDBOX_TIMEOUT_MIN = 1.0
 PLOTLY_SANDBOX_TIMEOUT_MAX = 120.0
@@ -102,7 +104,7 @@ CACHE_TTL_MAX = 1440
 
 UiLanguage = Literal["ja", "en"]
 PlotlyVisualizationMode = Literal["off", "json", "python"]
-PlotlyMultiSpecMode = Literal["prompt", "first_only"]
+PlotlyMultiSpecMode = Literal["prompt", "first_only", "all_tabs"]
 
 
 def _get_system_locale_name() -> str | None:
@@ -149,9 +151,9 @@ def normalize_plotly_multi_spec_mode(
     value: str | None,
 ) -> PlotlyMultiSpecMode:
     """複数 Plotly spec の扱い設定を既知の値へ正規化する。"""
-    if value == "first_only":
-        return "first_only"
-    return "prompt"
+    if value in {"prompt", "first_only", "all_tabs"}:
+        return value
+    return DEFAULT_PLOTLY_MULTI_SPEC_MODE
 
 
 def normalize_plotly_visualization_mode(
