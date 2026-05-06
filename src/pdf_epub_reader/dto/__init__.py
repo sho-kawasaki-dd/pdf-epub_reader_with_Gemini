@@ -36,6 +36,7 @@ from pdf_epub_reader.dto.ui_text_dto import (
     MainWindowTexts,
     MarkdownExportTexts,
     PlotlyTexts,
+    PlotWindowTexts,
     SettingsDialogTexts,
     SidePanelTexts,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "PlotlyRenderRequest",
     "PlotlySpec",
     "PlotlyTexts",
+    "PlotWindowTexts",
     "RectCoords",
     "SettingsDialogTexts",
     "SelectionContent",

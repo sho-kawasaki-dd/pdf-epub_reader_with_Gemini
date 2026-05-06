@@ -129,6 +129,21 @@ class PlotlyTexts:
 
 
 @dataclass(frozen=True)
+class PlotWindowTexts:
+    """PlotWindow のタブ UI で使う静的文言。"""
+
+    spec_list_pane_title: str
+    toolbar_rerender: str
+    toolbar_copy_source: str
+    toolbar_copy_png: str
+    toolbar_save: str
+    kaleido_unavailable_tooltip: str
+    rerender_failed_status: str
+    copy_png_failed_status: str
+    tab_title_template: str
+
+
+@dataclass(frozen=True)
 class SettingsDialogTexts:
     """設定ダイアログの静的文言。"""
 

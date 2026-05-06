@@ -28,18 +28,36 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdf_epub_reader.dto import PlotTabPayload
+from pdf_epub_reader.dto import PlotTabPayload, PlotWindowTexts
 
 
 logger = logging.getLogger(__name__)
 
 
+_DEFAULT_TEXTS = PlotWindowTexts(
+    spec_list_pane_title="Specs",
+    toolbar_rerender="Rerender",
+    toolbar_copy_source="Copy source",
+    toolbar_copy_png="Copy PNG",
+    toolbar_save="Save",
+    kaleido_unavailable_tooltip="PNG export is unavailable until kaleido is installed.",
+    rerender_failed_status="Failed to rerender the Plotly figure: {details}",
+    copy_png_failed_status="Failed to copy the Plotly figure as PNG: {details}",
+    tab_title_template="{title}",
+)
+
+
 class PlotWindow(QWidget):
     """Plotly 可視化を独立表示するための軽量ウィンドウ。"""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        texts: PlotWindowTexts | None = None,
+    ) -> None:
         super().__init__(parent)
         self.resize(960, 720)
+        self._texts = texts or _DEFAULT_TEXTS
         # WebEngine が読む一時 HTML の寿命をウィンドウに揃える。
         self._temp_dir: TemporaryDirectory[str] | None = None
         self._html_counter = 0
@@ -63,7 +81,7 @@ class PlotWindow(QWidget):
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
         self._spec_toggle_button.setArrowType(Qt.ArrowType.LeftArrow)
-        self._spec_toggle_button.setText("Specs")
+        self._spec_toggle_button.setText(self._texts.spec_list_pane_title)
         self._spec_toggle_button.toggled.connect(self._toggle_spec_pane)
 
         self._spec_list = QListWidget(self._spec_pane)
@@ -121,10 +139,11 @@ class PlotWindow(QWidget):
         tab_state.payload = payload
         tab_state.html_path = self._write_html_file(payload.html)
         tab_state.web_view.load(QUrl.fromLocalFile(str(tab_state.html_path)))
-        self._tab_widget.setTabText(index, payload.title)
+        formatted_title = self._format_tab_title(payload)
+        self._tab_widget.setTabText(index, formatted_title)
         item = self._spec_list.item(index)
         if item is not None:
-            item.setText(payload.title)
+            item.setText(formatted_title)
         if self._tab_widget.currentIndex() == index:
             self.setWindowTitle(payload.title)
 
@@ -143,8 +162,9 @@ class PlotWindow(QWidget):
             for index, payload in enumerate(tab_payloads):
                 tab_state = self._create_tab_state(payload)
                 self._tab_states.append(tab_state)
-                self._tab_widget.addTab(tab_state.widget, payload.title)
-                self._spec_list.addItem(QListWidgetItem(payload.title))
+                formatted_title = self._format_tab_title(payload)
+                self._tab_widget.addTab(tab_state.widget, formatted_title)
+                self._spec_list.addItem(QListWidgetItem(formatted_title))
                 if index == 0:
                     self._tab_widget.setCurrentIndex(0)
                     self._spec_list.setCurrentRow(0)
@@ -160,17 +180,19 @@ class PlotWindow(QWidget):
 
         toolbar = QToolBar(tab_widget)
         toolbar.setMovable(False)
-        rerender_action = QAction("Rerender", toolbar)
+        rerender_action = QAction(self._texts.toolbar_rerender, toolbar)
         rerender_action.triggered.connect(lambda: self._request_rerender(payload))
-        copy_source_action = QAction("Copy source", toolbar)
+        copy_source_action = QAction(self._texts.toolbar_copy_source, toolbar)
         copy_source_action.triggered.connect(
             lambda: self._copy_source_to_clipboard(payload)
         )
-        copy_png_action = QAction("Copy PNG", toolbar)
+        copy_png_action = QAction(self._texts.toolbar_copy_png, toolbar)
         copy_png_action.triggered.connect(
             lambda: self._copy_png_to_clipboard(tab_widget)
         )
-        save_action = QAction("Save", toolbar)
+        save_action = QAction(self._texts.toolbar_save, toolbar)
+        save_action.setToolTip(self._texts.kaleido_unavailable_tooltip)
+        save_action.setEnabled(False)
         toolbar.addAction(rerender_action)
         toolbar.addAction(copy_source_action)
         toolbar.addAction(copy_png_action)
@@ -224,6 +246,12 @@ class PlotWindow(QWidget):
 
     def _copy_png_to_clipboard(self, tab_widget: QWidget) -> None:
         QApplication.clipboard().setPixmap(tab_widget.grab())
+
+    def _format_tab_title(self, payload: PlotTabPayload) -> str:
+        return self._texts.tab_title_template.format(
+            index=payload.spec_index + 1,
+            title=payload.title,
+        )
 
     def _on_spec_list_row_changed(self, index: int) -> None:
         if index < 0:

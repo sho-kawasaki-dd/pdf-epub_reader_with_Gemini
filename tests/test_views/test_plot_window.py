@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
 from pdf_epub_reader.dto import PlotTabPayload
+from pdf_epub_reader.services.translation_service import TranslationService
 from pdf_epub_reader.views.plot_window import PlotWindow
 
 
@@ -139,6 +140,37 @@ def test_toolbar_actions_copy_source_and_reload_tab() -> None:
 
     assert mock_load.call_count == 2
     assert window._tab_states[0].html_path.name == "plot_0002.html"
+
+
+def test_plot_window_texts_are_applied_to_chrome() -> None:
+    _get_app()
+    texts = TranslationService().build_plot_window_texts("ja")
+    window = PlotWindow(texts=texts)
+
+    with patch("pdf_epub_reader.views.plot_window.QWebEngineView.load"):
+        window.show_figures(
+            [
+                PlotTabPayload(
+                    title="Plot A",
+                    html="<html><body>plot</body></html>",
+                    spec_source_text="{}",
+                    spec_language="json",
+                    spec_index=0,
+                )
+            ]
+        )
+
+    assert window._spec_toggle_button.text() == "Spec 一覧"
+    assert window._tab_states[0].rerender_action.text() == "再描画"
+    assert window._tab_states[0].copy_source_action.text() == "ソースをコピー"
+    assert window._tab_states[0].copy_png_action.text() == "PNG をコピー"
+    assert window._tab_states[0].save_action.text() == "保存"
+    assert window._tab_states[0].save_action.toolTip() == (
+        "PNG 保存は kaleido をインストールすると利用できます。"
+    )
+    assert window._tab_widget.tabText(0) == "Plot A"
+    assert window._spec_list.item(0).text() == "Plot A"
+    window.close()
 
 
 def test_close_event_cleans_up_temp_html_directory() -> None:

@@ -1328,7 +1328,11 @@ class MainPresenter:
     def _build_plot_window(self) -> _PlotWindowLike:
         from pdf_epub_reader.views.plot_window import PlotWindow
 
-        return PlotWindow()
+        return PlotWindow(
+            texts=self._translation_service.build_plot_window_texts(
+                self._config.ui_language
+            )
+        )
 
     def _bind_plot_window(self, window: _PlotWindowLike) -> None:
         window.set_on_rerender_requested(

@@ -13,6 +13,7 @@ from pdf_epub_reader.dto import (
     MainWindowTexts,
     MarkdownExportTexts,
     PlotlyTexts,
+    PlotWindowTexts,
     SettingsDialogTexts,
     SidePanelTexts,
 )
@@ -212,6 +213,37 @@ class TranslationService:
             ),
             sandbox_cancel_link_text=self.translate(
                 "plotly.sandbox.cancel_link", language
+            ),
+        )
+
+    def build_plot_window_texts(self, language: str) -> PlotWindowTexts:
+        return PlotWindowTexts(
+            spec_list_pane_title=self.translate(
+                "plotly.window.spec_list_pane_title", language
+            ),
+            toolbar_rerender=self.translate(
+                "plotly.window.toolbar.rerender", language
+            ),
+            toolbar_copy_source=self.translate(
+                "plotly.window.toolbar.copy_source", language
+            ),
+            toolbar_copy_png=self.translate(
+                "plotly.window.toolbar.copy_png", language
+            ),
+            toolbar_save=self.translate(
+                "plotly.window.toolbar.save", language
+            ),
+            kaleido_unavailable_tooltip=self.translate(
+                "plotly.window.kaleido_unavailable_tooltip", language
+            ),
+            rerender_failed_status=self.translate(
+                "plotly.window.status.rerender_failed", language
+            ),
+            copy_png_failed_status=self.translate(
+                "plotly.window.status.copy_png_failed", language
+            ),
+            tab_title_template=self.translate(
+                "plotly.window.tab.title", language
             ),
         )
 

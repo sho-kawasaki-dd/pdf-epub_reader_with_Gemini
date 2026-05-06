@@ -83,6 +83,23 @@ class TestTranslationService:
         assert texts.sandbox_running_message == "Running Plotly sandbox..."
         assert texts.sandbox_cancel_link_text == "Cancel"
 
+    def test_build_plot_window_texts_returns_localized_toolbar_labels(self) -> None:
+        service = TranslationService()
+
+        texts = service.build_plot_window_texts("ja")
+
+        assert texts.spec_list_pane_title == "Spec 一覧"
+        assert texts.toolbar_rerender == "再描画"
+        assert texts.toolbar_copy_source == "ソースをコピー"
+        assert texts.toolbar_copy_png == "PNG をコピー"
+        assert texts.toolbar_save == "保存"
+        assert texts.kaleido_unavailable_tooltip == "PNG 保存は kaleido をインストールすると利用できます。"
+        assert (
+            texts.rerender_failed_status
+            == "Plotly 図を再描画できませんでした: {details}"
+        )
+        assert texts.tab_title_template == "{title}"
+
     def test_build_settings_dialog_texts_includes_export_tab_fields(self) -> None:
         service = TranslationService()
 
