@@ -282,6 +282,7 @@ class TestAISettingsPopulate:
             export_include_document_metadata=True,
             export_include_usage_metrics=True,
             export_include_yaml_frontmatter=True,
+            export_include_plotly_visualizations=False,
         )
         mock_settings_view._exec_return = True
 
@@ -312,6 +313,9 @@ class TestAISettingsPopulate:
         assert mock_settings_view.get_calls(
             "set_export_include_yaml_frontmatter"
         )[0] == (True,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_plotly_visualizations"
+        )[0] == (False,)
 
     def test_read_config_includes_export_fields(
         self, mock_settings_view: MockSettingsDialogView
@@ -326,6 +330,7 @@ class TestAISettingsPopulate:
         mock_settings_view._values["export_include_document_metadata"] = True
         mock_settings_view._values["export_include_usage_metrics"] = True
         mock_settings_view._values["export_include_yaml_frontmatter"] = True
+        mock_settings_view._values["export_include_plotly_visualizations"] = False
 
         result = presenter._read_config_from_view()
 
@@ -336,6 +341,7 @@ class TestAISettingsPopulate:
         assert result.export_include_document_metadata is True
         assert result.export_include_usage_metrics is True
         assert result.export_include_yaml_frontmatter is True
+        assert result.export_include_plotly_visualizations is False
 
     def test_reset_sets_ai_default_values(
         self, mock_settings_view: MockSettingsDialogView
@@ -373,6 +379,7 @@ class TestAISettingsPopulate:
             export_include_document_metadata=True,
             export_include_usage_metrics=True,
             export_include_yaml_frontmatter=True,
+            export_include_plotly_visualizations=False,
         )
         presenter = SettingsPresenter(mock_settings_view, config)
         mock_settings_view.calls.clear()
@@ -401,6 +408,9 @@ class TestAISettingsPopulate:
         assert mock_settings_view.get_calls(
             "set_export_include_yaml_frontmatter"
         )[-1] == (defaults.export_include_yaml_frontmatter,)
+        assert mock_settings_view.get_calls(
+            "set_export_include_plotly_visualizations"
+        )[-1] == (defaults.export_include_plotly_visualizations,)
 
 
 class TestFetchModels:

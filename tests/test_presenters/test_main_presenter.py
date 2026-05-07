@@ -1738,6 +1738,163 @@ class TestMarkdownExportFlow:
         assert str(exported_files[0]) in status_message
 
     @pytest.mark.asyncio
+    async def test_export_requested_writes_plotly_assets_before_markdown(
+        self,
+        tmp_path: Path,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        panel.set_available_models(["models/gemini-2.0-flash"])
+        panel.set_selected_model("models/gemini-2.0-flash")
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(export_folder=str(tmp_path), ui_language="en"),
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+        panel.set_selection_snapshot(_make_export_snapshot("Selected source"))
+        panel._store_export_state(
+            action_mode=AnalysisMode.TRANSLATION,
+            result=AnalysisResult(
+                translated_text="Saved translation",
+                raw_response="Raw translation",
+            ),
+            include_explanation=False,
+        )
+        panel._latest_plotly_specs = [
+            PlotlySpec(
+                index=1,
+                language="json",
+                source_text='{"data": [], "layout": {}}',
+                title="Velocity Plot",
+            )
+        ]
+
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.build_markdown_export_filename",
+            lambda doc_info, exported_at=None: "exported.md",
+        )
+        monkeypatch.setattr(
+            "pdf_epub_reader.services.markdown_export_service.build_markdown_export_filename",
+            lambda document_info, exported_at=None: "exported.md",
+        )
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.is_kaleido_available",
+            lambda: True,
+        )
+
+        export_calls: list[tuple[str, str]] = []
+
+        def fake_render_spec(spec, *, sandbox, timeout_s, cancel_token):
+            export_calls.append(("render", spec.title or ""))
+            return object()
+
+        def fake_export_spec(spec, figure, *, format, path):
+            export_calls.append(("export", str(path)))
+            Path(path).write_bytes(b"png")
+
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.render_spec",
+            fake_render_spec,
+        )
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.export_spec",
+            fake_export_spec,
+        )
+
+        await presenter._do_export_markdown()
+
+        assert export_calls == [
+            ("render", "Velocity Plot"),
+            ("export", str(tmp_path / "exported_plots" / "plot_1.png")),
+        ]
+        assert (tmp_path / "exported.md").exists()
+        assert (tmp_path / "exported_plots" / "plot_1.png").exists()
+
+        exported_text = (tmp_path / "exported.md").read_text(encoding="utf-8")
+        assert "## Visualizations" in exported_text
+        assert "![Velocity Plot](exported_plots/plot_1.png)" in exported_text
+
+        status_message = mock_main_view.get_calls("show_status_message")[-1][0]
+        assert "Exported Markdown to" in status_message
+        assert "Plotly visualizations were skipped" not in status_message
+
+    @pytest.mark.asyncio
+    async def test_export_requested_skips_plotly_assets_when_kaleido_missing(
+        self,
+        tmp_path: Path,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        panel.set_available_models(["models/gemini-2.0-flash"])
+        panel.set_selected_model("models/gemini-2.0-flash")
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(export_folder=str(tmp_path), ui_language="en"),
+        )
+
+        await presenter.open_file("/fake/doc.pdf")
+        panel.set_selection_snapshot(_make_export_snapshot("Selected source"))
+        panel._store_export_state(
+            action_mode=AnalysisMode.TRANSLATION,
+            result=AnalysisResult(
+                translated_text="Saved translation",
+                raw_response="Raw translation",
+            ),
+            include_explanation=False,
+        )
+        panel._latest_plotly_specs = [
+            PlotlySpec(
+                index=1,
+                language="json",
+                source_text='{"data": [], "layout": {}}',
+                title="Velocity Plot",
+            )
+        ]
+
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.build_markdown_export_filename",
+            lambda doc_info, exported_at=None: "exported.md",
+        )
+        monkeypatch.setattr(
+            "pdf_epub_reader.services.markdown_export_service.build_markdown_export_filename",
+            lambda document_info, exported_at=None: "exported.md",
+        )
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.is_kaleido_available",
+            lambda: False,
+        )
+
+        await presenter._do_export_markdown()
+
+        assert not (tmp_path / "exported_plots").exists()
+        exported_text = (tmp_path / "exported.md").read_text(encoding="utf-8")
+        assert "## Visualizations" not in exported_text
+
+        status_message = mock_main_view.get_calls("show_status_message")[-1][0]
+        assert "Exported Markdown to" in status_message
+        assert (
+            "Plotly visualizations were skipped (kaleido is not installed)."
+            in status_message
+        )
+
+    @pytest.mark.asyncio
     async def test_export_requested_with_unset_folder_shows_status_only(
         self,
         mock_main_view: MockMainView,

@@ -289,6 +289,9 @@ class TranslationService:
             export_include_yaml_frontmatter_text=self.translate(
                 "settings.export.include_yaml_frontmatter", language
             ),
+            export_include_plotly_visualizations_text=self.translate(
+                "settings.export.include_plotly_visualizations", language
+            ),
             plotly_multi_spec_prompt_text=self.translate(
                 "settings.visualization.plotly_multi_spec_prompt", language
             ),

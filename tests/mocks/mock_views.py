@@ -583,6 +583,7 @@ class MockSettingsDialogView:
             "export_include_document_metadata": False,
             "export_include_usage_metrics": False,
             "export_include_yaml_frontmatter": False,
+            "export_include_plotly_visualizations": True,
             "plotly_sandbox_timeout_s": 10.0,
             "plotly_multi_spec_mode": "all_tabs",
         }
@@ -690,6 +691,9 @@ class MockSettingsDialogView:
     def get_export_include_yaml_frontmatter(self) -> bool:
         return self._values["export_include_yaml_frontmatter"]
 
+    def get_export_include_plotly_visualizations(self) -> bool:
+        return self._values["export_include_plotly_visualizations"]
+
     def get_plotly_sandbox_timeout_s(self) -> float:
         return self._values["plotly_sandbox_timeout_s"]
 
@@ -745,6 +749,10 @@ class MockSettingsDialogView:
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         self.calls.append(("set_export_include_yaml_frontmatter", (value,)))
         self._values["export_include_yaml_frontmatter"] = value
+
+    def set_export_include_plotly_visualizations(self, value: bool) -> None:
+        self.calls.append(("set_export_include_plotly_visualizations", (value,)))
+        self._values["export_include_plotly_visualizations"] = value
 
     def set_plotly_sandbox_timeout_s(self, value: float) -> None:
         self.calls.append(("set_plotly_sandbox_timeout_s", (value,)))

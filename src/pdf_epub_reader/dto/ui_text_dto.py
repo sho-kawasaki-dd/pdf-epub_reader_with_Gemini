@@ -175,6 +175,7 @@ class SettingsDialogTexts:
     export_include_document_metadata_text: str
     export_include_usage_metrics_text: str
     export_include_yaml_frontmatter_text: str
+    export_include_plotly_visualizations_text: str
     plotly_multi_spec_prompt_text: str
     plotly_multi_spec_first_only_text: str
     plotly_multi_spec_all_tabs_text: str

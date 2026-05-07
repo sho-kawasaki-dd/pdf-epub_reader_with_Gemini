@@ -623,6 +623,27 @@ class MainPresenter:
             export_dir = Path(export_folder)
             export_dir.mkdir(parents=True, exist_ok=True)
 
+            markdown_filename = build_markdown_export_filename(doc_info)
+            file_path = export_dir / markdown_filename
+
+            exported_plotly_specs: list[PlotlySpec] = []
+            plotly_skip_message: str | None = None
+            if (
+                self._config.export_include_plotly_visualizations
+                and export_state.plotly_specs
+            ):
+                if is_kaleido_available():
+                    exported_plotly_specs = (
+                        await self._export_plotly_visualization_assets_async(
+                            export_state.plotly_specs,
+                            export_dir / f"{file_path.stem}_plots",
+                        )
+                    )
+                else:
+                    plotly_skip_message = self._translate(
+                        "export.status.plotly_visualizations_skipped_kaleido_unavailable"
+                    )
+
             markdown = build_markdown_export_document(
                 MarkdownExportPayload(
                     result=export_state.result,
@@ -630,11 +651,11 @@ class MainPresenter:
                     selection_snapshot=export_state.selection_snapshot,
                     action_mode=export_state.action_mode,
                     model_name=export_state.model_name,
+                    plotly_specs=exported_plotly_specs,
                 ),
                 self._config,
                 export_texts,
             )
-            file_path = export_dir / build_markdown_export_filename(doc_info)
             file_path.write_text(markdown, encoding="utf-8")
         except Exception as exc:
             self._view.show_status_message(
@@ -643,11 +664,73 @@ class MainPresenter:
             logger.warning("Markdown export failed", exc_info=True)
             return
 
-        self._view.show_status_message(
-            export_texts.success_message_template.format(
-                file_path=str(file_path)
-            )
+        success_message = export_texts.success_message_template.format(
+            file_path=str(file_path)
         )
+        if plotly_skip_message is not None:
+            success_message = f"{success_message}\n{plotly_skip_message}"
+        self._view.show_status_message(
+            success_message
+        )
+
+    async def _export_plotly_visualization_assets_async(
+        self,
+        specs: list[PlotlySpec],
+        asset_dir: Path,
+    ) -> list[PlotlySpec]:
+        """Plotly 可視化 PNG を worker で書き出し、成功分だけ返す。"""
+        if not specs:
+            return []
+
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        exported_specs: list[PlotlySpec] = []
+        loop = asyncio.get_running_loop()
+
+        for spec in specs:
+            cancel_token = CancelToken()
+            sandbox = (
+                self._get_sandbox_executor() if spec.language == "python" else None
+            )
+            target_path = asset_dir / f"plot_{spec.index}.png"
+            try:
+                figure = await loop.run_in_executor(
+                    self._plotly_worker_pool,
+                    lambda current_spec=spec, current_sandbox=sandbox, current_cancel_token=cancel_token: render_spec(
+                        current_spec,
+                        sandbox=current_sandbox,
+                        timeout_s=self._config.plotly_sandbox_timeout_s,
+                        cancel_token=current_cancel_token,
+                    ),
+                )
+                await loop.run_in_executor(
+                    self._plotly_worker_pool,
+                    lambda current_spec=spec, current_figure=figure, current_path=target_path: export_spec(
+                        current_spec,
+                        current_figure,
+                        format="png",
+                        path=current_path,
+                    ),
+                )
+            except PlotlyRenderError as exc:
+                logger.warning(
+                    "Skipping Plotly visualization export for spec %s: %s",
+                    spec.index,
+                    exc,
+                )
+                continue
+            except PlotlyExportError as exc:
+                if exc.code == "write_failed":
+                    raise
+                logger.warning(
+                    "Skipping Plotly visualization export for spec %s: %s",
+                    spec.index,
+                    exc,
+                )
+                continue
+
+            exported_specs.append(spec)
+
+        return exported_specs
 
     async def _do_cache_create(self) -> None:
         """ドキュメント全文をキャッシュする。"""

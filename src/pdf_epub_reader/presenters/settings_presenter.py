@@ -117,6 +117,9 @@ class SettingsPresenter:
         self._view.set_export_include_yaml_frontmatter(
             config.export_include_yaml_frontmatter
         )
+        self._view.set_export_include_plotly_visualizations(
+            config.export_include_plotly_visualizations
+        )
         self._view.set_plotly_sandbox_timeout_s(
             config.plotly_sandbox_timeout_s
         )
@@ -149,6 +152,7 @@ class SettingsPresenter:
             export_include_document_metadata=self._view.get_export_include_document_metadata(),
             export_include_usage_metrics=self._view.get_export_include_usage_metrics(),
             export_include_yaml_frontmatter=self._view.get_export_include_yaml_frontmatter(),
+            export_include_plotly_visualizations=self._view.get_export_include_plotly_visualizations(),
             plotly_visualization_mode=self._config.plotly_visualization_mode,
             plotly_sandbox_timeout_s=normalize_plotly_sandbox_timeout_s(
                 self._view.get_plotly_sandbox_timeout_s()

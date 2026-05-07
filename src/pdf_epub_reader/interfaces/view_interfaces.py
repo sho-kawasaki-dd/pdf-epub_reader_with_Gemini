@@ -559,6 +559,10 @@ class ISettingsDialogView(Protocol):
         """YAML frontmatter を export に含めるかを取得する。"""
         ...
 
+    def get_export_include_plotly_visualizations(self) -> bool:
+        """Plotly 可視化を export に含めるかを取得する。"""
+        ...
+
     def get_plotly_sandbox_timeout_s(self) -> float:
         """Plotly sandbox の timeout 秒数を取得する。"""
         ...
@@ -617,6 +621,10 @@ class ISettingsDialogView(Protocol):
 
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         """YAML frontmatter を export に含めるかを設定する。"""
+        ...
+
+    def set_export_include_plotly_visualizations(self, value: bool) -> None:
+        """Plotly 可視化を export に含めるかを設定する。"""
         ...
 
     def set_plotly_sandbox_timeout_s(self, value: float) -> None:

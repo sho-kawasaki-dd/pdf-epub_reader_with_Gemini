@@ -232,6 +232,9 @@ class SettingsDialog(QDialog):
         self._export_include_yaml_frontmatter_check = QCheckBox("")
         export_layout.addRow(self._export_include_yaml_frontmatter_check)
 
+        self._export_include_plotly_visualizations_check = QCheckBox("")
+        export_layout.addRow(self._export_include_plotly_visualizations_check)
+
         self._tabs.addTab(export_tab, "")
 
         # --- Visualization タブ ---
@@ -374,6 +377,9 @@ class SettingsDialog(QDialog):
     def get_export_include_yaml_frontmatter(self) -> bool:
         return self._export_include_yaml_frontmatter_check.isChecked()
 
+    def get_export_include_plotly_visualizations(self) -> bool:
+        return self._export_include_plotly_visualizations_check.isChecked()
+
     def get_plotly_sandbox_timeout_s(self) -> float:
         return self._plotly_timeout_spin.value()
 
@@ -478,6 +484,9 @@ class SettingsDialog(QDialog):
 
     def set_export_include_yaml_frontmatter(self, value: bool) -> None:
         self._export_include_yaml_frontmatter_check.setChecked(value)
+
+    def set_export_include_plotly_visualizations(self, value: bool) -> None:
+        self._export_include_plotly_visualizations_check.setChecked(value)
 
     def set_plotly_sandbox_timeout_s(self, value: float) -> None:
         self._plotly_timeout_spin.setValue(value)
@@ -587,6 +596,9 @@ class SettingsDialog(QDialog):
         )
         self._export_include_yaml_frontmatter_check.setText(
             texts.export_include_yaml_frontmatter_text
+        )
+        self._export_include_plotly_visualizations_check.setText(
+            texts.export_include_plotly_visualizations_text
         )
         self._tabs.setTabText(3, texts.export_tab_text)
         self._plotly_timeout_label.setText(texts.plotly_timeout_label)
