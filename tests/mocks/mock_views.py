@@ -285,10 +285,12 @@ class MockPlotWindow:
         self.calls: list[tuple[str, object]] = []
         self._on_rerender_requested: Callable[[PlotTabPayload], None] | None = None
         self._on_save_requested: Callable[[PlotTabPayload, Path], None] | None = None
+        self._on_copy_source_requested: Callable[[PlotTabPayload], None] | None = None
+        self._on_copy_png_requested: Callable[[PlotTabPayload], None] | None = None
         self._kaleido_available: bool | None = None
 
     def show_figures(self, tab_payloads: list[PlotTabPayload]) -> None:
-        self.calls.append(("show_figures", tab_payloads))
+        self.calls.append(("show_figures", list(tab_payloads)))
 
     def reload_tab(self, index: int, payload: PlotTabPayload) -> None:
         self.calls.append(("reload_tab", (index, payload)))
@@ -305,17 +307,41 @@ class MockPlotWindow:
         self._on_save_requested = cb
         self.calls.append(("set_on_save_requested", ()))
 
+    def set_on_copy_source_requested(
+        self, cb: Callable[[PlotTabPayload], None]
+    ) -> None:
+        self._on_copy_source_requested = cb
+        self.calls.append(("set_on_copy_source_requested", ()))
+
+    def set_on_copy_png_requested(
+        self, cb: Callable[[PlotTabPayload], None]
+    ) -> None:
+        self._on_copy_png_requested = cb
+        self.calls.append(("set_on_copy_png_requested", ()))
+
     def set_kaleido_available(self, available: bool) -> None:
         self._kaleido_available = available
         self.calls.append(("set_kaleido_available", (available,)))
 
     def simulate_rerender_requested(self, payload: PlotTabPayload) -> None:
+        self.calls.append(("simulate_rerender_requested", (payload,)))
         if self._on_rerender_requested is not None:
             self._on_rerender_requested(payload)
 
     def simulate_save_requested(self, payload: PlotTabPayload, file_path: Path) -> None:
+        self.calls.append(("simulate_save_requested", (payload, file_path)))
         if self._on_save_requested is not None:
             self._on_save_requested(payload, file_path)
+
+    def simulate_copy_source_requested(self, payload: PlotTabPayload) -> None:
+        self.calls.append(("simulate_copy_source_requested", (payload,)))
+        if self._on_copy_source_requested is not None:
+            self._on_copy_source_requested(payload)
+
+    def simulate_copy_png_requested(self, payload: PlotTabPayload) -> None:
+        self.calls.append(("simulate_copy_png_requested", (payload,)))
+        if self._on_copy_png_requested is not None:
+            self._on_copy_png_requested(payload)
 
     def show_figure_html(self, html: str, title: str) -> None:
         self.show_figures(
