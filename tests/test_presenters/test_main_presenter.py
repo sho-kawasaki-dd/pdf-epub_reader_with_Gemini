@@ -1876,6 +1876,56 @@ class TestPlotlyRenderFlow:
             "AI response: 1.2 s / graph render: 0.4 s",
         )
 
+    def test_plot_window_receives_kaleido_availability_flag(
+        self,
+        mock_main_view: MockMainView,
+        mock_document_model: MockDocumentModel,
+        mock_side_panel_view: MockSidePanelView,
+        mock_ai_model: MockAIModel,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        panel = PanelPresenter(
+            view=mock_side_panel_view, ai_model=mock_ai_model
+        )
+        created_windows: list[MockPlotWindow] = []
+
+        def build_window() -> MockPlotWindow:
+            window = MockPlotWindow()
+            created_windows.append(window)
+            return window
+
+        monkeypatch.setattr(
+            "pdf_epub_reader.presenters.main_presenter.is_kaleido_available",
+            lambda: False,
+        )
+
+        presenter = MainPresenter(
+            view=mock_main_view,
+            document_model=mock_document_model,
+            panel_presenter=panel,
+            config=AppConfig(ui_language="en"),
+            plot_window_factory=build_window,
+        )
+
+        presenter._on_plotly_render(
+            PlotlyRenderRequest(
+                specs=[
+                    PlotlySpec(
+                        index=0,
+                        language="json",
+                        source_text='{"data": [], "layout": {}}',
+                        title="Flag Plot",
+                    )
+                ],
+                origin_mode="json",
+            )
+        )
+
+        assert created_windows[0].calls[0] == (
+            "set_kaleido_available",
+            (False,),
+        )
+
     def test_multiple_specs_prompt_mode_uses_view_picker(
         self,
         mock_main_view: MockMainView,
